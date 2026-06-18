@@ -1,0 +1,150 @@
+/**
+ * cuelist.css
+ * Ownership: CueList UI 스타일
+ * Change Reason: CueList 디자인이 바뀔 때만 수정
+ */
+
+/* ── 컨테이너 ────────────────────────────── */
+.cue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+  background: #1e1e1e;
+}
+
+/* ── 빈 상태 ─────────────────────────────── */
+.cue-empty {
+  padding: 24px 16px;
+  color: #666;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ── CueItem ─────────────────────────────── */
+.cue-item {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto;
+  grid-template-rows: auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #2d2d2d;
+  border: 2px solid transparent;
+  position: relative;
+  transition: background 0.1s, border-color 0.1s;
+  user-select: none;
+}
+
+.cue-item:hover {
+  background: #383838;
+}
+
+/* 선택됨 */
+.cue-item.is-selected {
+  border-color: #569cd6;
+  background: #1f3a52;
+}
+
+/* 라이브 중 */
+.cue-item.is-live {
+  border-color: #4ec9b0;
+  background: #1a3832;
+}
+
+.cue-item.is-live.is-selected {
+  border-color: #4ec9b0;
+}
+
+/* ── 번호 ────────────────────────────────── */
+.cue-number {
+  font-size: 12px;
+  color: #666;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.is-live .cue-number {
+  color: #4ec9b0;
+  font-weight: 700;
+}
+
+/* ── LIVE 뱃지 ───────────────────────────── */
+.cue-live-badge {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #4ec9b0;
+  letter-spacing: 0.05em;
+}
+
+.is-live .cue-live-badge {
+  display: block;
+}
+
+/* ── 텍스트 미리보기 ─────────────────────── */
+.cue-preview {
+  font-size: 14px;
+  color: #d4d4d4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  grid-column: 2;
+}
+
+.is-live .cue-preview {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* ── 타입 표시 ───────────────────────────── */
+.cue-type {
+  font-size: 10px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  grid-column: 3;
+  padding-right: 4px;
+}
+
+/* LIVE 뱃지와 겹치지 않도록 */
+.is-live .cue-type {
+  visibility: hidden;
+}
+
+/* ── 삭제 버튼 ───────────────────────────── */
+.cue-delete-btn {
+  grid-column: 4;
+  display: none;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #666;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cue-item:hover .cue-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cue-delete-btn:hover {
+  background: #c0392b;
+  color: #fff;
+}

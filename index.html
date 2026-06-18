@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Custom Presenter by HW</title>
+  <link rel="stylesheet" href="./view/slide.css">
+  <link rel="stylesheet" href="./ui/cuelist.css">
+  <style>
+    /* ── 리셋 ────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:    #111214;
+      --bg-surface: #1c1e21;
+      --bg-raised:  #25272b;
+      --border:     #2e3035;
+      --text-primary:   #e8eaed;
+      --text-secondary: #9aa0a6;
+      --text-muted:     #5f6368;
+      --accent-live:  #1db954;
+      --accent-blue:  #4a9eff;
+      --accent-live-dim: rgba(29,185,84,0.12);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    /* ── 앱 레이아웃 ─────────────────────────── */
+    #app {
+      display: grid;
+      grid-template-rows: 48px 1fr;
+      height: 100vh;
+    }
+
+    /* Edit Mode */
+    #app.mode-edit #workspace {
+      grid-template-rows: 1fr 220px;
+    }
+    /* Live Mode */
+    #app.mode-live #workspace {
+      grid-template-rows: 1fr 0;
+    }
+    #app.mode-live #editor-panel {
+      display: none;
+    }
+
+    /* ── 상단 헤더 ───────────────────────────── */
+    #header {
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    #app-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .header-spacer { flex: 1; }
+
+    /* 모드 토글 */
+    #mode-toggle {
+      display: flex;
+      background: var(--bg-raised);
+      border-radius: 6px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .mode-btn {
+      padding: 4px 12px;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* Output 버튼 */
+    #output-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: var(--accent-live-dim);
+      border: 1px solid rgba(29,185,84,0.3);
+      border-radius: 6px;
+      color: var(--accent-live);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: all 0.15s;
+    }
+    #output-btn:hover {
+      background: rgba(29,185,84,0.2);
+    }
+    #output-btn .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent-live);
+    }
+    #output-btn.broadcasting .dot {
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── 워크스페이스 ────────────────────────── */
+    #workspace {
+      display: grid;
+      grid-template-rows: 1fr 220px;
+      overflow: hidden;
+    }
+
+    #main-area {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── CueList 패널 ────────────────────────── */
+    #cuelist-panel {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #cue-list-el {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+    }
+
+    /* ── Preview 패널 ────────────────────────── */
+    #preview-panel-wrap {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #preview-panel {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .preview-blank {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 13px;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── Editor 패널 ─────────────────────────── */
+    #editor-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: all 0.2s;
+    }
+
+    .editor-header {
+      display: flex;
+      align-items: center;
+      padding: 8px 14px;
+      border-top: 1px solid var(--border);
+      gap: 10px;
+      flex-shrink: 0;
+      background: var(--bg-surface);
+    }
+
+    .editor-header span {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .editor-actions {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .btn {
+      padding: 5px 12px;
+      border-radius: 5px;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: var(--accent-blue);
+      color: #fff;
+    }
+    .btn-primary:hover { background: #3a8ef0; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover {
+      background: var(--bg-raised);
+      color: var(--text-primary);
+    }
+
+    #editor-body {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #lyrics-input {
+      flex: 1;
+      padding: 14px 16px;
+      background: var(--bg-surface);
+      border: none;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: 'Segoe UI', sans-serif;
+      line-height: 1.7;
+      resize: none;
+      outline: none;
+    }
+    #lyrics-input::placeholder { color: var(--text-muted); }
+
+    #editor-sidebar {
+      width: 180px;
+      border-left: 1px solid var(--border);
+      padding: 12px;
+      background: var(--bg-surface);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+    }
+
+    .sidebar-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .style-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .style-select {
+      width: 100%;
+      padding: 5px 8px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-primary);
+      font-size: 12px;
+    }
+
+    .font-size-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .font-size-row input[type=range] {
+      flex: 1;
+      accent-color: var(--accent-blue);
+    }
+    .font-size-val {
+      font-size: 11px;
+      color: var(--text-secondary);
+      min-width: 28px;
+      text-align: right;
+    }
+
+    /* ── CueList 아이템 오버라이드 ───────────── */
+    .cue-item {
+      background: transparent;
+      border-color: transparent;
+    }
+    .cue-item:hover { background: var(--bg-raised); }
+    .cue-item.is-selected { background: rgba(74,158,255,0.1); border-color: var(--accent-blue); }
+    .cue-item.is-live { background: var(--accent-live-dim); border-color: var(--accent-live); }
+
+    /* 스크롤바 */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── Editor 수정 모드 ─────────────────────── */
+    #editor-panel.editor-mode-edit #lyrics-input {
+      border-top: 2px solid var(--accent-blue);
+    }
+    #editor-mode-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+<div id="app" class="mode-edit">
+
+  <!-- 헤더 -->
+  <header id="header">
+    <div id="app-title">Custom Presenter by HW</div>
+
+    <div class="header-spacer"></div>
+
+    <div id="mode-toggle">
+      <button class="mode-btn active" data-mode="edit">편집</button>
+      <button class="mode-btn" data-mode="live">운영</button>
+    </div>
+
+    <button id="output-btn">
+      <span class="dot"></span>
+      Output 열기
+    </button>
+  </header>
+
+  <!-- 워크스페이스 -->
+  <div id="workspace">
+
+    <!-- 메인: CueList + Preview -->
+    <div id="main-area">
+
+      <!-- CueList -->
+      <div id="cuelist-panel">
+        <div class="panel-header">순서</div>
+        <div class="cue-list" id="cue-list-el"></div>
+      </div>
+
+      <!-- Preview -->
+      <div id="preview-panel-wrap">
+        <div id="preview-panel"></div>
+      </div>
+
+    </div>
+
+    <!-- Editor -->
+    <div id="editor-panel">
+      <div class="editor-header">
+        <span id="editor-mode-label">편집</span>
+        <div class="editor-actions">
+          <button class="btn btn-ghost" id="new-page-btn" style="display:none">새 Page</button>
+          <button class="btn btn-ghost" id="clear-btn">초기화</button>
+          <button class="btn btn-ghost" id="save-btn" style="display:none">저장</button>
+          <button class="btn btn-primary" id="import-btn">가사 추가</button>
+        </div>
+      </div>
+      <div id="editor-body">
+        <textarea
+          id="lyrics-input"
+          placeholder="가사를 입력하세요.&#10;빈 줄로 절을 구분합니다.&#10;&#10;예)&#10;주께 감사해 할렐루야&#10;주께 감사해 아멘&#10;&#10;찬양해 영원히&#10;찬양해 주님을"
+        ></textarea>
+        <div id="editor-sidebar">
+          <div class="style-row">
+            <div class="sidebar-label">정렬</div>
+            <select class="style-select" id="h-align">
+              <option value="center">가운데</option>
+              <option value="left">왼쪽</option>
+              <option value="right">오른쪽</option>
+            </select>
+            <select class="style-select" id="v-align">
+              <option value="bottom">하단</option>
+              <option value="middle">중앙</option>
+              <option value="top">상단</option>
+            </select>
+          </div>
+          <div class="style-row">
+            <div class="sidebar-label">크기</div>
+            <div class="font-size-row">
+              <input type="range" id="font-size" min="24" max="120" value="72">
+              <span class="font-size-val" id="font-size-val">72</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+  import { createTextPage } from './domain/Page.js'
+  import { dispatch, getState, getSelectedPage, subscribe } from './store/AppStore.js'
+  import { importLyrics } from './utils/lyricsImport.js'
+  import { createCueList } from './ui/CueList.js'
+  import { createPreviewPanel } from './ui/PreviewPanel.js'
+  import { createBroadcastOutput } from './output/BroadcastOutput.js'
+
+  // ── 초기화 ───────────────────────────────
+  createCueList(document.getElementById('cue-list-el'))
+  createPreviewPanel(document.getElementById('preview-panel'))
+  createBroadcastOutput()
+
+  // ── 모드 전환 ────────────────────────────
+  const app = document.getElementById('app')
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      app.className = `mode-${btn.dataset.mode}`
+    })
+  })
+
+  // ── Output 열기 ──────────────────────────
+  const outputBtn = document.getElementById('output-btn')
+  let outputWindow = null
+
+  outputBtn.addEventListener('click', () => {
+    if (!outputWindow || outputWindow.closed) {
+      outputWindow = window.open('./output.html', 'tc-presenter-output', 'width=1280,height=720')
+      outputBtn.textContent = ''
+      const dot = document.createElement('span')
+      dot.className = 'dot'
+      outputBtn.appendChild(dot)
+      outputBtn.appendChild(document.createTextNode(' Output 송출 중'))
+      outputBtn.classList.add('broadcasting')
+    } else {
+      outputWindow.focus()
+    }
+  })
+
+  // ── Editor: 가사 추가 ────────────────────
+  document.getElementById('import-btn').addEventListener('click', () => {
+    const raw = document.getElementById('lyrics-input').value.trim()
+    if (!raw) return
+
+    const hAlign = document.getElementById('h-align').value
+    const vAlign = document.getElementById('v-align').value
+    const fontSize = Number(document.getElementById('font-size').value)
+
+    importLyrics(raw, {
+      horizontalAlign: hAlign,
+      verticalAlign: vAlign,
+      fontSize,
+    }).forEach(page => dispatch({ type: 'ADD_PAGE', page }))
+
+    document.getElementById('lyrics-input').value = ''
+  })
+
+  // ── Editor: 저장 (UPDATE_PAGE) ───────────
+  document.getElementById('save-btn').addEventListener('click', () => {
+    const page = getSelectedPage()
+    if (!page) return
+
+    const text = document.getElementById('lyrics-input').value
+    const horizontalAlign = document.getElementById('h-align').value
+    const verticalAlign = document.getElementById('v-align').value
+    const fontSize = Number(document.getElementById('font-size').value)
+
+    dispatch({
+      type: 'UPDATE_PAGE',
+      page: { ...page, text, horizontalAlign, verticalAlign, fontSize },
+    })
+  })
+
+  // ── Editor: selectedPageId 변경 감지 → 내용 로드 ─
+  const editorPanel = document.getElementById('editor-panel')
+  const editorModeLabel = document.getElementById('editor-mode-label')
+  const newPageBtn = document.getElementById('new-page-btn')
+  const saveBtn = document.getElementById('save-btn')
+  const importBtn = document.getElementById('import-btn')
+  const lyricsInput = document.getElementById('lyrics-input')
+  const hAlignEl = document.getElementById('h-align')
+  const vAlignEl = document.getElementById('v-align')
+  const fontSizeInput2 = document.getElementById('font-size')
+  const fontSizeVal2 = document.getElementById('font-size-val')
+
+  // ── 새 Page 버튼 → 추가 모드 복귀 ─────────
+  newPageBtn.addEventListener('click', () => {
+    dispatch({ type: 'CLEAR_SELECTION' })
+  })
+
+  let lastSelectedPageId = null
+
+  subscribe(({ state }) => {
+    const { selectedPageId } = state.presenterState
+    if (selectedPageId === lastSelectedPageId) return
+    lastSelectedPageId = selectedPageId
+
+    const page = selectedPageId
+      ? state.presentation.pages.find(p => p.id === selectedPageId) ?? null
+      : null
+
+    if (page) {
+      // 수정 모드: 선택된 Page 내용 로드
+      lyricsInput.value = page.text ?? ''
+      hAlignEl.value = page.horizontalAlign ?? 'center'
+      vAlignEl.value = page.verticalAlign ?? 'bottom'
+      fontSizeInput2.value = page.fontSize ?? 72
+      fontSizeVal2.textContent = page.fontSize ?? 72
+
+      editorModeLabel.textContent = 'Page 수정'
+      editorPanel.classList.add('editor-mode-edit')
+      newPageBtn.style.display = ''
+      saveBtn.style.display = ''
+      importBtn.style.display = 'none'
+    } else {
+      // 추가 모드: 입력 영역 + 스타일 초기화
+      lyricsInput.value = ''
+      hAlignEl.value = 'center'
+      vAlignEl.value = 'bottom'
+      fontSizeInput2.value = 72
+      fontSizeVal2.textContent = 72
+
+      editorModeLabel.textContent = '편집'
+      editorPanel.classList.remove('editor-mode-edit')
+      newPageBtn.style.display = 'none'
+      saveBtn.style.display = 'none'
+      importBtn.style.display = ''
+    }
+  })
+
+  // ── Editor: 초기화 ───────────────────────
+  document.getElementById('clear-btn').addEventListener('click', () => {
+    if (!confirm('모든 Page를 삭제할까요?')) return
+    getState().presentation.pages
+      .map(p => p.id)
+      .forEach(id => dispatch({ type: 'REMOVE_PAGE', pageId: id }))
+  })
+
+  // ── 폰트 크기 슬라이더 ───────────────────
+  fontSizeInput2.addEventListener('input', () => {
+    fontSizeVal2.textContent = fontSizeInput2.value
+  })
+</script>
+
+</body>
+</html>

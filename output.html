@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>TC-Presenter Output</title>
+  <link rel="stylesheet" href="./view/slide.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #output-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    /* 대기 화면 */
+    #standby {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #222;
+      font-family: monospace;
+      font-size: 14px;
+      letter-spacing: 0.1em;
+    }
+
+    /* 전체화면 버튼 */
+    #fullscreen-btn {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      padding: 8px 14px;
+      background: rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.4);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: monospace;
+      z-index: 100;
+      transition: opacity 0.2s;
+    }
+    #fullscreen-btn:hover {
+      background: rgba(255,255,255,0.2);
+      color: rgba(255,255,255,0.8);
+    }
+  </style>
+</head>
+<body>
+
+<div id="output-container">
+  <div id="standby">STANDBY</div>
+</div>
+
+<button id="fullscreen-btn">전체화면</button>
+
+<script type="module">
+  import { createPageView } from './view/PageView.js'
+
+  const CHANNEL_NAME = 'tc-presenter-output'
+  const container = document.getElementById('output-container')
+  const standby = document.getElementById('standby')
+  const fullscreenBtn = document.getElementById('fullscreen-btn')
+
+  // ── BroadcastChannel 수신 ─────────────────
+  const channel = new BroadcastChannel(CHANNEL_NAME)
+
+  channel.onmessage = ({ data }) => {
+    if (data.type === 'CLEAR') {
+      showStandby()
+      return
+    }
+
+    if (data.type === 'SHOW_PAGE') {
+      showPage(data.page)
+    }
+  }
+
+  // ── 렌더링 ───────────────────────────────
+  function showPage(page) {
+    container.innerHTML = ''
+    // Future: media 수신 시 두 번째 인자로 전달
+    container.appendChild(createPageView(page, null))
+  }
+
+  function showStandby() {
+    container.innerHTML = ''
+    container.appendChild(standby)
+  }
+
+  // ── 전체화면 ─────────────────────────────
+  fullscreenBtn.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+      fullscreenBtn.textContent = '전체화면 해제'
+    } else {
+      document.exitFullscreen()
+      fullscreenBtn.textContent = '전체화면'
+    }
+  })
+
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+      fullscreenBtn.textContent = '전체화면'
+    }
+  })
+
+  // ── 키보드 단축키 ────────────────────────
+  document.addEventListener('keydown', (e) => {
+    // F 또는 F11: 전체화면 토글
+    if (e.key === 'f' || e.key === 'F') {
+      fullscreenBtn.click()
+    }
+    // ESC는 브라우저 기본 동작(전체화면 해제)에 맡김
+  })
+</script>
+</body>
+</html>
