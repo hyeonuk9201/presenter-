@@ -97,6 +97,36 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
 
+    /* Undo/Redo */
+    #history-controls {
+      display: flex;
+      gap: 2px;
+    }
+    .history-btn {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      border: none;
+      background: var(--bg-raised);
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .history-btn:hover:not(:disabled) {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+    }
+    .history-btn:disabled {
+      color: var(--text-muted);
+      opacity: 0.4;
+      cursor: default;
+    }
+
     /* Output 버튼 */
     #output-btn {
       display: flex;
@@ -360,6 +390,11 @@
 
     <div class="header-spacer"></div>
 
+    <div id="history-controls">
+      <button id="undo-btn" class="history-btn" title="실행 취소 (Ctrl+Z)" disabled>↶</button>
+      <button id="redo-btn" class="history-btn" title="다시 실행 (Ctrl+Shift+Z)" disabled>↷</button>
+    </div>
+
     <div id="mode-toggle">
       <button class="mode-btn active" data-mode="edit">편집</button>
       <button class="mode-btn" data-mode="live">운영</button>
@@ -436,26 +471,112 @@
 
 <script type="module">
   import { createTextPage } from './domain/Page.js'
-  import { dispatch, getState, getSelectedPage, subscribe } from './store/AppStore.js'
+  import { getState, getSelectedPage, subscribe, registerSubscriber } from './store/AppStore.js'
+  import { execute, setHistoryHook } from './command/CommandBus.js'
+  import { PersistenceSubscriber } from './persistence/PersistenceSubscriber.js'
+  import { HistoryHook, undo, redo, canUndo, canRedo } from './history/HistoryManager.js'
   import { importLyrics } from './utils/lyricsImport.js'
   import { createCueList } from './ui/CueList.js'
   import { createPreviewPanel } from './ui/PreviewPanel.js'
   import { createBroadcastOutput } from './output/BroadcastOutput.js'
+
+  // ── Persistence 등록 (D-015, Mutation Subscriber) ──
+  registerSubscriber(PersistenceSubscriber)
+
+  // ── History Hook 등록 (D-018) ──
+  // CommandBus가 dispatch 이후 HistoryManager.afterExecute()를 호출하도록
+  // 연결한다. 실제 등록은 아래 Step5 블록에서, HistoryManager.afterExecute를
+  // 감싸는 합성 Hook으로 한다 (Undo/Redo 버튼 갱신 타이밍 때문 — 아래 설명).
+
+  // ── Undo/Redo (Step5) ────────────────────
+  // HistoryManager.undo/redo는 CommandBus.execute를 주입받아 역방향
+  // Command를 실행한다. AppStore.dispatch를 직접 넘기지 않는다 — 그러면
+  // History Hook이 다시 걸리지 않아 재귀 방지 로직이 의미를 잃는다.
+  const undoBtn = document.getElementById('undo-btn')
+  const redoBtn = document.getElementById('redo-btn')
+
+  function refreshHistoryButtons() {
+    undoBtn.disabled = !canUndo()
+    redoBtn.disabled = !canRedo()
+  }
+
+  // 모든 dispatch 이후 버튼 활성 상태를 갱신해야 하지만, CommandBus.execute()
+  // 내부 순서가 dispatch() -> storeChanged 발생 -> (그 다음에) historyHook.
+  // afterExecute() 호출이다. 즉 storeChanged 시점엔 아직 History 스택에
+  // push되지 않은 상태라 subscribe()만으로 갱신하면 한 틱 늦은 값을 본다
+  // (새로고침 후 첫 Page 작성 시 Undo 버튼이 비활성으로 고정되는 버그로 발견됨).
+  //
+  // CueList.js 등 다른 파일도 execute()를 호출하므로, index.html 안에서
+  // 개별 호출부를 감싸는 방식으로는 모든 경로를 커버할 수 없다. 대신
+  // HistoryHook(afterExecute)을 감싸는 합성 Hook을 만들어, "History 스택이
+  // 실제로 갱신된 직후" 시점에 항상 버튼을 갱신하도록 한다. setHistoryHook은
+  // 여전히 단일 슬롯(D-018)이며, 여기서는 그 슬롯에 HistoryManager 본연의
+  // afterExecute를 그대로 호출 + 버튼 갱신만 추가하는 thin wrapper를 끼운다.
+  setHistoryHook({
+    afterExecute(action, prevState) {
+      HistoryHook.afterExecute(action, prevState)
+      refreshHistoryButtons()
+    },
+  })
+
+  undoBtn.addEventListener('click', () => {
+    undo(execute)
+    refreshHistoryButtons()
+  })
+
+  redoBtn.addEventListener('click', () => {
+    redo(execute)
+    refreshHistoryButtons()
+  })
+
+  window.addEventListener('keydown', (e) => {
+    const isUndoCombo = (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z'
+    const isRedoCombo = (e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z'
+
+    if (isUndoCombo) {
+      e.preventDefault()
+      undo(execute)
+      refreshHistoryButtons()
+    } else if (isRedoCombo) {
+      e.preventDefault()
+      redo(execute)
+      refreshHistoryButtons()
+    }
+  })
+
+  refreshHistoryButtons() // 초기 상태 동기화
 
   // ── 초기화 ───────────────────────────────
   createCueList(document.getElementById('cue-list-el'))
   createPreviewPanel(document.getElementById('preview-panel'))
   createBroadcastOutput()
 
-  // ── 모드 전환 ────────────────────────────
+  // ── 모드 전환 (TODO-001, Phase B: DOM → state 기반) ──
+  // 클릭은 더 이상 app.className을 직접 바꾸지 않는다. execute()로
+  // SET_APP_MODE를 보내 state를 바꾸고, app.className/.mode-btn.active는
+  // 아래 subscribe() 콜백에서 state.presenterState.appMode를 읽어 반영한다
+  // (CSS 셀렉터 #app.mode-edit/#app.mode-live 자체는 무수정 — 렌더링 결과는
+  // 동일하고, 판정의 출처만 DOM에서 state로 바뀐다).
   const app = document.getElementById('app')
   document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'))
-      btn.classList.add('active')
-      app.className = `mode-${btn.dataset.mode}`
+      execute({ type: 'SET_APP_MODE', payload: { mode: btn.dataset.mode } })
     })
   })
+
+  let lastAppMode = null
+  function syncAppModeUI(state) {
+    const { appMode } = state.presenterState
+    if (appMode === lastAppMode) return
+    lastAppMode = appMode
+
+    app.className = `mode-${appMode}`
+    document.querySelectorAll('.mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === appMode)
+    })
+  }
+  subscribe(({ state }) => syncAppModeUI(state))
+  syncAppModeUI(getState()) // 초기 상태 동기화 (subscribe는 dispatch 이후에만 발동)
 
   // ── Output 열기 ──────────────────────────
   const outputBtn = document.getElementById('output-btn')
@@ -488,7 +609,7 @@
       horizontalAlign: hAlign,
       verticalAlign: vAlign,
       fontSize,
-    }).forEach(page => dispatch({ type: 'ADD_PAGE', page }))
+    }).forEach(page => execute({ type: 'ADD_PAGE', payload: { page } }))
 
     document.getElementById('lyrics-input').value = ''
   })
@@ -503,9 +624,9 @@
     const verticalAlign = document.getElementById('v-align').value
     const fontSize = Number(document.getElementById('font-size').value)
 
-    dispatch({
+    execute({
       type: 'UPDATE_PAGE',
-      page: { ...page, text, horizontalAlign, verticalAlign, fontSize },
+      payload: { page: { ...page, text, horizontalAlign, verticalAlign, fontSize } },
     })
   })
 
@@ -523,7 +644,7 @@
 
   // ── 새 Page 버튼 → 추가 모드 복귀 ─────────
   newPageBtn.addEventListener('click', () => {
-    dispatch({ type: 'CLEAR_SELECTION' })
+    execute({ type: 'CLEAR_SELECTION' })
   })
 
   let lastSelectedPageId = null
@@ -571,7 +692,7 @@
     if (!confirm('모든 Page를 삭제할까요?')) return
     getState().presentation.pages
       .map(p => p.id)
-      .forEach(id => dispatch({ type: 'REMOVE_PAGE', pageId: id }))
+      .forEach(id => execute({ type: 'REMOVE_PAGE', payload: { pageId: id } }))
   })
 
   // ── 폰트 크기 슬라이더 ───────────────────

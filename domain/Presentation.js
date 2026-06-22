@@ -63,6 +63,19 @@ export function movePage(presentation, fromIndex, toIndex) {
   return { ...presentation, pages }
 }
 
+/**
+ * 지정한 index에 Page를 삽입한다.
+ * D-018 / History: REMOVE_PAGE의 Undo가 원래 위치를 정확히 복원하기 위한
+ * 전용 연산이다. addPage(끝에 추가) + movePage(위치 이동) 두 단계로 하면
+ * Mutation/Persistence가 불필요하게 두 번 발생하므로, 단일 연산으로 둔다.
+ */
+export function insertPageAt(presentation, page, index) {
+  const pages = [...presentation.pages]
+  const safeIndex = Math.max(0, Math.min(index, pages.length))
+  pages.splice(safeIndex, 0, page)
+  return { ...presentation, pages }
+}
+
 // ─────────────────────────────────────────
 // 조회
 // ─────────────────────────────────────────

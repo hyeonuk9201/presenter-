@@ -6,9 +6,13 @@
  * 클릭 모델:
  *   Edit Mode → SELECT만  (Editor에 내용 로드)
  *   Live Mode → SELECT + GO_LIVE (즉시 송출)
+ *
+ * (TODO-001, Phase B 해결됨) Mode 판정은 DOM class(#app.mode-live) 읽기가
+ * 아니라 state.presenterState.appMode 기반으로 동작한다.
  */
 
-import { subscribe, dispatch, getState } from '../store/AppStore.js'
+import { subscribe, getState } from '../store/AppStore.js'
+import { execute } from '../command/CommandBus.js'
 
 export function createCueList(containerEl) {
   let lastFingerprint = ''
@@ -87,7 +91,7 @@ export function createCueList(containerEl) {
       const wasSelected = presenterState.selectedPageId === page.id
       const wasLive     = presenterState.livePageId     === page.id
 
-      dispatch({ type: 'REMOVE_PAGE', pageId: page.id })
+      execute({ type: 'REMOVE_PAGE', payload: { pageId: page.id } })
 
       if (wasSelected) {
         // selectedPageId → null → subscribe else 분기에서 Editor 초기화 처리
@@ -103,13 +107,14 @@ export function createCueList(containerEl) {
     // Edit Mode: SELECT만
     // Live Mode: SELECT + GO_LIVE
     item.addEventListener('click', () => {
-      dispatch({ type: 'SELECT_PAGE', pageId: page.id })
+      execute({ type: 'SELECT_PAGE', payload: { pageId: page.id } })
 
-      const isLiveMode = document.getElementById('app')
-        ?.classList.contains('mode-live')
+      // (TODO-001, Phase B) DOM class(#app.mode-live) 읽기 대신 state의
+      // presenterState.appMode를 직접 읽는다.
+      const isLiveMode = getState().presenterState.appMode === 'live'
 
       if (isLiveMode) {
-        dispatch({ type: 'GO_LIVE', pageId: page.id })
+        execute({ type: 'GO_LIVE', payload: { pageId: page.id } })
       }
     })
 

@@ -7,16 +7,42 @@
  *   1. 상태는 dispatch()를 통해서만 변경한다.
  *   2. UI는 subscribe()로 변경을 감지한다.
  *   3. 계산 데이터(Derived)는 Store에 저장하지 않는다.
+ *
+ * Step2 (Mutation 기반 Subscriber, 병행 추가):
+ *   - 기존 storeChanged 단일 브로드캐스트는 그대로 유지한다. (기존 Subscriber 제거하지 않음)
+ *   - registerSubscriber()로 등록한 Mutation Subscriber는 자신이 선언한
+ *     interestedMutations에 해당하는 Mutation이 발생했을 때만 notify()를 받는다.
+ *   - Mutation은 Action 자체가 아니라 "State의 어떤 부분이 바뀌었는가"를 나타내는
+ *     별도 타입이다 (StateMutationArchitecture.md, SubscriberArchitecture.md 기준).
+ *     예: REMOVE_PAGE 액션 1개가 SET_PAGES + SET_SELECTION + SET_LIVE_PAGE를
+ *     동시에 발생시킬 수 있다.
+ *   - Mutation은 reduce() 실행 전/후 state를 비교하여 도출한다 (reducer 무수정).
+ *   - 구독자 간 실행 순서는 보장하지 않는다(등록 순서로 호출하되, 의존하지 않게 작성).
+ *
+ * Step3 (D-015, PersistenceSubscriber):
+ *   - 저장(write)은 더 이상 AppStore가 수행하지 않는다.
+ *     PersistenceSubscriber(Mutation Subscriber)가 dispatch 이후 별도로 저장한다.
+ *   - 읽기(load)는 AppStore의 부트스트랩 책임으로 그대로 유지한다
+ *     (초기 state 생성은 AppStore 책임, 저장은 Persistence 책임).
+ *   - AppStore는 Persistence의 존재를 알지 않는다. PersistenceSubscriber는
+ *     registerSubscriber()를 통해 자신을 등록할 뿐이며, AppStore는 어떤
+ *     Subscriber가 등록되어 있는지 신경 쓰지 않는다.
  */
 
-import { createPresentation, addPage, removePage, replacePage, movePage } from '../domain/Presentation.js'
-import { createPresenterState, selectPage, goLive, clearLive, clearSelection } from '../domain/PresenterState.js'
+import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt } from '../domain/Presentation.js'
+import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
 
 // ─────────────────────────────────────────
-// localStorage 헬퍼
+// localStorage 헬퍼 (읽기만 유지 — 쓰기는 PersistenceSubscriber로 이동, D-015)
 // ─────────────────────────────────────────
 
-const STORAGE_KEY = 'tc-presenter-presentation'
+/**
+ * STORAGE_KEY를 export하는 이유:
+ * load(부트스트랩, AppStore 책임)와 save(부수효과, PersistenceSubscriber 책임)가
+ * 같은 저장 위치를 봐야 하기 때문이다. AppStore는 여전히 "초기 state 생성"
+ * 책임을 가지므로 load는 그대로 둔다(D-015 합의: load는 이번 단계 범위 밖).
+ */
+export const STORAGE_KEY = 'tc-presenter-presentation'
 
 function loadPresentation() {
   try {
@@ -25,17 +51,6 @@ function loadPresentation() {
     return JSON.parse(raw) // { title, pages }
   } catch {
     return null
-  }
-}
-
-function savePresentation(presentation) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      title: presentation.title,
-      pages: presentation.pages,
-    }))
-  } catch {
-    // 저장 실패 시 무시 (용량 초과 등)
   }
 }
 
@@ -56,10 +71,86 @@ let state = {
 }
 
 // ─────────────────────────────────────────
-// Event Bus
+// Event Bus (기존 storeChanged 브로드캐스트 — 유지)
 // ─────────────────────────────────────────
 
 const bus = new EventTarget()
+
+// ─────────────────────────────────────────
+// Mutation Subscriber Registry (신규, 병행 추가)
+// ─────────────────────────────────────────
+
+/**
+ * 등록된 Mutation Subscriber 목록.
+ * Subscriber: { id, interestedMutations: string[], notify(mutations, state) }
+ */
+const mutationSubscribers = []
+
+/**
+ * Mutation Subscriber를 등록한다.
+ * 기존 subscribe()(storeChanged)와는 별개의 통지 경로이다.
+ *
+ * @param {{ id: string, interestedMutations: string[], notify: (mutations: string[], state: object) => void }} subscriber
+ */
+export function registerSubscriber(subscriber) {
+  if (!subscriber || typeof subscriber.notify !== 'function' || !Array.isArray(subscriber.interestedMutations)) {
+    console.warn('[AppStore] 유효하지 않은 Subscriber:', subscriber)
+    return
+  }
+  mutationSubscribers.push(subscriber)
+}
+
+/**
+ * Mutation Subscriber를 해제한다. (테스트/정리용)
+ */
+export function unregisterSubscriber(id) {
+  const idx = mutationSubscribers.findIndex(s => s.id === id)
+  if (idx !== -1) mutationSubscribers.splice(idx, 1)
+}
+
+/**
+ * action.type과 prev/next state를 비교하여 발생한 Mutation 목록을 도출한다.
+ * Mutation은 "무엇이 바뀌었는가"를 나타내며, Action 이름과 다를 수 있다.
+ *
+ * 실제로 값이 바뀌었는지는 prev/next 비교로 확정한다 (reducer 추측 금지).
+ */
+function deriveMutations(actionType, prev, next) {
+  const mutations = []
+
+  const pagesChanged =
+    prev.presentation.pages !== next.presentation.pages
+  const titleChanged =
+    prev.presentation.title !== next.presentation.title
+  const selectionChanged =
+    prev.presenterState.selectedPageId !== next.presenterState.selectedPageId
+  const liveChanged =
+    prev.presenterState.livePageId !== next.presenterState.livePageId
+  const appModeChanged =
+    prev.presenterState.appMode !== next.presenterState.appMode
+
+  if (pagesChanged) mutations.push('SET_PAGES')
+  if (titleChanged) mutations.push('SET_TITLE')
+  if (selectionChanged) mutations.push('SET_SELECTION')
+  if (liveChanged) mutations.push('SET_LIVE_PAGE')
+  if (appModeChanged) mutations.push('SET_APP_MODE')
+
+  return mutations
+}
+
+/**
+ * 발생한 Mutation을 관심 있는 Subscriber에게만 통지한다.
+ * 구독자 간 실행 순서는 보장하지 않는다.
+ */
+function notifyMutationSubscribers(mutations, state) {
+  if (mutations.length === 0) return
+
+  for (const subscriber of mutationSubscribers) {
+    const relevant = mutations.filter(m => subscriber.interestedMutations.includes(m))
+    if (relevant.length > 0) {
+      subscriber.notify(relevant, state)
+    }
+  }
+}
 
 // ─────────────────────────────────────────
 // Public API
@@ -74,16 +165,26 @@ export function subscribe(listener) {
 }
 
 export function dispatch(action) {
+  const prev = state
   const next = reduce(state, action)
   if (next === state) return // 변경 없으면 이벤트 생략
 
   state = next
-  savePresentation(state.presentation)
+
+  // (D-015) 저장은 더 이상 여기서 수행하지 않는다.
+  // PersistenceSubscriber가 SET_PAGES / SET_TITLE / SET_SELECTION / SET_LIVE_PAGE
+  // Mutation을 구독하여 dispatch 이후 별도로 저장한다.
+
+  // (기존, 유지) storeChanged 단일 브로드캐스트
   bus.dispatchEvent(
     new CustomEvent('storeChanged', {
       detail: { action, state },
     })
   )
+
+  // (신규, 병행) Mutation 기반 타겟 통지
+  const mutations = deriveMutations(action.type, prev, state)
+  notifyMutationSubscribers(mutations, state)
 }
 
 // ─────────────────────────────────────────
@@ -127,6 +228,13 @@ function reduce(state, action) {
         presentation: movePage(state.presentation, action.fromIndex, action.toIndex),
       }
 
+    case 'INSERT_PAGE_AT':
+      // D-018 / History: REMOVE_PAGE Undo 전용. 일반 편집 흐름에서는 사용하지 않는다.
+      return {
+        ...state,
+        presentation: insertPageAt(state.presentation, action.page, action.index),
+      }
+
     case 'SET_TITLE':
       return {
         ...state,
@@ -157,6 +265,15 @@ function reduce(state, action) {
       return {
         ...state,
         presenterState: clearLive(state.presenterState),
+      }
+
+    // (TODO-001, Phase B) Edit/Live Mode 전환을 state 기반으로 판정하기 위한
+    // action. DOM class(#app.mode-live) 읽기를 대체한다. D-014(Session) 범위는
+    // 가져오지 않고, 기존 presenterState 컨테이너에 최소 범위로 추가했다.
+    case 'SET_APP_MODE':
+      return {
+        ...state,
+        presenterState: setAppMode(state.presenterState, action.mode),
       }
 
     default:
