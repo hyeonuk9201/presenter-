@@ -75,7 +75,43 @@ function createTextLayer(page) {
 function applyTextStyle(el, page) {
   el.style.fontSize     = `${page.fontSize ?? 72}px`
   el.style.textAlign    = page.horizontalAlign ?? 'center'
+  el.style.color        = page.color ?? '#ffffff'
+  el.style.lineHeight   = page.lineHeight ?? 1.3 // 배수 — 단위 없음
+  el.style.fontWeight   = page.fontWeight ?? 'normal'
+  el.style.textShadow   = buildTextShadow(page)
 
   // verticalAlign은 부모 flex로 처리
   el.dataset.verticalAlign = page.verticalAlign ?? 'bottom'
+}
+
+/**
+ * 외곽선(textStroke)과 그림자(textShadow)를 하나의 CSS text-shadow로 합성한다.
+ * -webkit-text-stroke 대신 text-shadow 8방향 오프셋으로 외곽선을 흉내내는 이유:
+ * iPad/Safari 포함 모든 WebKit 계열에서 안정적으로 동작하며, CSS 표준 속성이라
+ * 별도 vendor prefix 분기 없이 동일 코드로 처리 가능하다.
+ * 외곽선 색상은 검정으로 고정한다(범위 단순화) — 영상/사진 배경에서도 흰 텍스트+
+ * 검정 외곽선 조합은 방송 자막/캡션의 표준 조합이라 배경색이 바뀌어도 대비가
+ * 거의 항상 유지된다. 사용자가 검정 텍스트를 검정 배경 위에 두는 경우는 색상
+ * 선택의 책임 영역이지 외곽선 기능의 책임 영역이 아니다.
+ */
+function buildTextShadow(page) {
+  const layers = []
+
+  const strokeWidth = page.textStroke ?? 0
+  if (strokeWidth > 0) {
+    // 8방향 오프셋으로 외곽선 효과 합성
+    const offsets = [
+      [-1, -1], [1, -1], [-1, 1], [1, 1],
+      [0, -1], [0, 1], [-1, 0], [1, 0],
+    ]
+    offsets.forEach(([dx, dy]) => {
+      layers.push(`${dx * strokeWidth}px ${dy * strokeWidth}px 0 #000000`)
+    })
+  }
+
+  if (page.textShadow) {
+    layers.push('2px 2px 6px rgba(0, 0, 0, 0.6)')
+  }
+
+  return layers.length > 0 ? layers.join(', ') : 'none'
 }

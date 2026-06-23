@@ -25,6 +25,11 @@ export function createTextPage({
   fontSize = 72,
   horizontalAlign = 'center',
   verticalAlign = 'bottom',
+  color = '#ffffff',
+  lineHeight = 1.3,
+  fontWeight = 'normal',
+  textStroke = 0,
+  textShadow = false,
 } = {}) {
   return {
     // ── Identity ──────────────────────────
@@ -36,11 +41,16 @@ export function createTextPage({
     text,
 
     // ── Style ─────────────────────────────
-    // 미래: page.style.fontSize / horizontalAlign / verticalAlign
+    // 미래: page.style.fontSize / horizontalAlign / verticalAlign / color / lineHeight / fontWeight / textStroke / textShadow
     // 미래: stylePresetId 로 교체 가능
     fontSize,
     horizontalAlign, // 'left' | 'center' | 'right'
     verticalAlign,   // 'top'  | 'middle' | 'bottom'
+    color,           // 텍스트 색상 (Hex). 기본값은 어두운 배경 가정 흰색.
+    lineHeight,      // 배수(multiplier). fontSize에 곱해지는 비율 — 절대 px 아님.
+    fontWeight,      // 'normal' | 'bold'. 시스템 폰트 굵기만 지원 (웹폰트/폰트 패밀리는 범위 밖).
+    textStroke,      // 외곽선 두께(px). 0이면 없음. 색상은 검정 고정(범위 단순화, 영상 배경 대비용 표준 조합).
+    textShadow,      // 그림자 on/off. 세부 오프셋/불투명도 조정 없음(범위 단순화).
 
     // ── Future (미구현) ────────────────────
     // mediaId: null,           // 전경 미디어

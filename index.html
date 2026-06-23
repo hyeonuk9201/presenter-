@@ -353,6 +353,28 @@
       text-align: right;
     }
 
+    .color-picker {
+      width: 100%;
+      height: 28px;
+      padding: 2px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .checkbox-row input[type=checkbox] {
+      accent-color: var(--accent-blue);
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
     /* ── CueList 아이템 오버라이드 ───────────── */
     .cue-item {
       background: transparent;
@@ -456,11 +478,40 @@
             </select>
           </div>
           <div class="style-row">
+            <div class="sidebar-label">굵기</div>
+            <select class="style-select" id="font-weight">
+              <option value="normal">보통</option>
+              <option value="bold">굵게</option>
+            </select>
+          </div>
+          <div class="style-row">
             <div class="sidebar-label">크기</div>
             <div class="font-size-row">
               <input type="range" id="font-size" min="24" max="120" value="72">
               <span class="font-size-val" id="font-size-val">72</span>
             </div>
+          </div>
+          <div class="style-row">
+            <div class="sidebar-label">줄간격</div>
+            <div class="font-size-row">
+              <input type="range" id="line-height" min="1.0" max="2.0" step="0.1" value="1.3">
+              <span class="font-size-val" id="line-height-val">1.3</span>
+            </div>
+          </div>
+          <div class="style-row">
+            <div class="sidebar-label">색상</div>
+            <input type="color" class="color-picker" id="text-color" value="#ffffff">
+          </div>
+          <div class="style-row">
+            <div class="sidebar-label">외곽선</div>
+            <div class="font-size-row">
+              <input type="range" id="text-stroke" min="0" max="4" step="1" value="0">
+              <span class="font-size-val" id="text-stroke-val">0</span>
+            </div>
+          </div>
+          <div class="style-row checkbox-row">
+            <label class="sidebar-label" for="text-shadow">그림자</label>
+            <input type="checkbox" id="text-shadow">
           </div>
         </div>
       </div>
@@ -604,11 +655,21 @@
     const hAlign = document.getElementById('h-align').value
     const vAlign = document.getElementById('v-align').value
     const fontSize = Number(document.getElementById('font-size').value)
+    const lineHeight = Number(document.getElementById('line-height').value)
+    const color = document.getElementById('text-color').value
+    const fontWeight = document.getElementById('font-weight').value
+    const textStroke = Number(document.getElementById('text-stroke').value)
+    const textShadow = document.getElementById('text-shadow').checked
 
     importLyrics(raw, {
       horizontalAlign: hAlign,
       verticalAlign: vAlign,
       fontSize,
+      lineHeight,
+      color,
+      fontWeight,
+      textStroke,
+      textShadow,
     }).forEach(page => execute({ type: 'ADD_PAGE', payload: { page } }))
 
     document.getElementById('lyrics-input').value = ''
@@ -623,10 +684,15 @@
     const horizontalAlign = document.getElementById('h-align').value
     const verticalAlign = document.getElementById('v-align').value
     const fontSize = Number(document.getElementById('font-size').value)
+    const lineHeight = Number(document.getElementById('line-height').value)
+    const color = document.getElementById('text-color').value
+    const fontWeight = document.getElementById('font-weight').value
+    const textStroke = Number(document.getElementById('text-stroke').value)
+    const textShadow = document.getElementById('text-shadow').checked
 
     execute({
       type: 'UPDATE_PAGE',
-      payload: { page: { ...page, text, horizontalAlign, verticalAlign, fontSize } },
+      payload: { page: { ...page, text, horizontalAlign, verticalAlign, fontSize, lineHeight, color, fontWeight, textStroke, textShadow } },
     })
   })
 
@@ -639,8 +705,15 @@
   const lyricsInput = document.getElementById('lyrics-input')
   const hAlignEl = document.getElementById('h-align')
   const vAlignEl = document.getElementById('v-align')
+  const fontWeightEl = document.getElementById('font-weight')
   const fontSizeInput2 = document.getElementById('font-size')
   const fontSizeVal2 = document.getElementById('font-size-val')
+  const lineHeightInput2 = document.getElementById('line-height')
+  const lineHeightVal2 = document.getElementById('line-height-val')
+  const colorInput2 = document.getElementById('text-color')
+  const textStrokeInput2 = document.getElementById('text-stroke')
+  const textStrokeVal2 = document.getElementById('text-stroke-val')
+  const textShadowInput2 = document.getElementById('text-shadow')
 
   // ── 새 Page 버튼 → 추가 모드 복귀 ─────────
   newPageBtn.addEventListener('click', () => {
@@ -663,8 +736,15 @@
       lyricsInput.value = page.text ?? ''
       hAlignEl.value = page.horizontalAlign ?? 'center'
       vAlignEl.value = page.verticalAlign ?? 'bottom'
+      fontWeightEl.value = page.fontWeight ?? 'normal'
       fontSizeInput2.value = page.fontSize ?? 72
       fontSizeVal2.textContent = page.fontSize ?? 72
+      lineHeightInput2.value = page.lineHeight ?? 1.3
+      lineHeightVal2.textContent = page.lineHeight ?? 1.3
+      colorInput2.value = page.color ?? '#ffffff'
+      textStrokeInput2.value = page.textStroke ?? 0
+      textStrokeVal2.textContent = page.textStroke ?? 0
+      textShadowInput2.checked = page.textShadow ?? false
 
       editorModeLabel.textContent = 'Page 수정'
       editorPanel.classList.add('editor-mode-edit')
@@ -676,8 +756,15 @@
       lyricsInput.value = ''
       hAlignEl.value = 'center'
       vAlignEl.value = 'bottom'
+      fontWeightEl.value = 'normal'
       fontSizeInput2.value = 72
       fontSizeVal2.textContent = 72
+      lineHeightInput2.value = 1.3
+      lineHeightVal2.textContent = 1.3
+      colorInput2.value = '#ffffff'
+      textStrokeInput2.value = 0
+      textStrokeVal2.textContent = 0
+      textShadowInput2.checked = false
 
       editorModeLabel.textContent = '편집'
       editorPanel.classList.remove('editor-mode-edit')
@@ -698,6 +785,16 @@
   // ── 폰트 크기 슬라이더 ───────────────────
   fontSizeInput2.addEventListener('input', () => {
     fontSizeVal2.textContent = fontSizeInput2.value
+  })
+
+  // ── 줄간격 슬라이더 ──────────────────────
+  lineHeightInput2.addEventListener('input', () => {
+    lineHeightVal2.textContent = lineHeightInput2.value
+  })
+
+  // ── 외곽선 슬라이더 ──────────────────────
+  textStrokeInput2.addEventListener('input', () => {
+    textStrokeVal2.textContent = textStrokeInput2.value
   })
 </script>
 
