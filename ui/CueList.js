@@ -25,7 +25,11 @@ export function createCueList(containerEl) {
     const { pages } = state.presentation
     const { selectedPageId, livePageId } = state.presenterState
 
-    const currentFingerprint = pages.map(p => `${p.id}:${p.text}`).join('|')
+    // Step6(2026-06-27): text뿐 아니라 mediaId까지 fingerprint에 포함한다.
+    // 기존에는 `${p.id}:${p.text}`만 봤는데, image/video Page는 text가
+    // 항상 undefined라 mediaId가 바뀌어도(미디어 교체) 변경 감지가 안 될
+    // 수 있었다 — type과 mediaId를 추가해 그 경우도 감지하게 한다.
+    const currentFingerprint = pages.map(p => `${p.id}:${p.type}:${p.text}:${p.mediaId}`).join('|')
     const pagesChanged = currentFingerprint !== lastFingerprint
 
     if (pagesChanged) {
@@ -84,7 +88,12 @@ export function createCueList(containerEl) {
 
     del.addEventListener('click', (e) => {
       e.stopPropagation() // 아이템 클릭(SELECT) 전파 차단
-      const firstLine = page.text?.split('\n')[0] || '(빈 페이지)'
+      // Step6(2026-06-27): getPreviewText()로 통일 — image/video Page는
+      // page.text가 항상 undefined라 기존 코드(`page.text?.split(...)`)로는
+      // 무조건 "(빈 페이지)"로 표시되는 문제가 있었다. getPreviewText는
+      // 이미 type별 분기를 갖고 있어(line 131~136) image Page는 "(image)"로
+      // 보여준다.
+      const firstLine = getPreviewText(page)
       if (!confirm('이 Page를 삭제할까요?\n\n"' + firstLine + '"')) return
 
       const { presenterState } = getState()

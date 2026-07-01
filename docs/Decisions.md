@@ -701,3 +701,67 @@ AppStoreArchitecture.md의 "History Boundary"가 `CommandBus → HistoryManager 
 ### 결과
 
 영향 받는 문서: AppStoreArchitecture.md("History Boundary" 섹션 전체 재작성).
+
+# D-019
+
+## Media Command는 비동기 Preload를 거치며, 이로 인해 CommandBus.execute()는 직렬 실행 큐를 가진 async 함수로, HistoryManager.undo()/redo()는 async 함수로 전환된다
+
+### 결정
+
+ADD_PAGE / UPDATE_PAGE / INSERT_PAGE_AT(Undo가 주입하는 Command 포함)는 mediaId가 있을 경우 dispatch() 이전에 MediaStore(IndexedDB)에서 Blob을 조회해 MediaRuntimeCache(mediaId -> blob URL, 메모리 전용)를 채우는 과정을 거친다. 이 Preload는 View가 아니라 CommandBus.execute() 내부(Command Handler 경로)에서만 일어난다.
+
+이로 인해 CommandBus.execute()는 async 함수가 된다. 외부 호출 계약(`execute(command)`를 호출하고 끝내는 fire-and-forget 패턴)은 그대로 유지하되, 내부적으로 모든 호출을 단일 Promise 큐에 순차 체이닝하여 "호출 순서 = dispatch 순서"를 강제한다.
+
+HistoryManager.undo() / redo()도 async 함수로 전환한다. commandBusExecute(entry.undoCommand)가 반환하는 Promise를 await한 뒤에야 isApplyingHistory 플래그를 해제한다.
+
+View(PageView.js)는 이 결정과 무관하게 순수 동기 함수로 유지된다. Preload가 끝난 뒤 MediaRuntimeCache에 동기로 채워진 blob URL만 조회한다.
+
+### 이유
+
+View를 비동기로 만들지 않기 위해, media -> blob URL 변환을 Command 단계로 옮기기로 합의했다(2026-06-27). 그런데 이 변경이 두 가지 잠재 결함을 만들었고, 둘 다 fake-indexeddb 기반 테스트로 실제 재현 후 확정했다.
+
+1. 순서 역전: execute()가 async가 되면서, media가 있는 Command(IndexedDB 조회로 한 틱 이상 지연)와 media가 없는 Command(즉시 완료)를 fire-and-forget으로 연속 호출하면, 늦게 호출한 media 없는 Command가 먼저 dispatch될 수 있었다. 직렬 실행 큐로 호출 순서와 dispatch 순서를 강제 일치시켜 해결했다.
+2. 재귀 기록 방지 무력화: HistoryManager.undo()가 sync 함수일 때는 commandBusExecute(...)가 반환한 Promise를 기다리지 않고 isApplyingHistory를 즉시 해제했다. 그러면 media Command의 실제 dispatch(및 afterExecute 호출)가 이미 플래그가 풀린 시점에 일어나, History 재귀 기록 방지가 무력화될 수 있었다. computeInverse에 INSERT_PAGE_AT 케이스가 없어 지금까지는 결과적으로 안전했을 뿐이며, 그 케이스가 추가되는 순간 실제로 터지는 잠재 결함이었다(테스트에서 일부러 케이스를 추가해 재현 후 확인). undo()/redo()를 async로 바꾸고 await로 완료를 기다린 뒤 플래그를 해제하도록 고쳐 해결했다.
+
+### 결과
+
+영향 받는 파일: command/CommandBus.js(execute 직렬 큐 + preloadMedia, MEDIA_COMMANDS whitelist 추가), history/HistoryManager.js(undo/redo async 전환), media/MediaStore.js(신규, IndexedDB wrapper, GC 미구현 — Phase 2로 미룸), media/MediaRuntimeCache.js(신규, mediaId -> blob URL 런타임 캐시, 쓰기는 CommandBus만 수행).
+
+영향 받는 문서: CommandBusArchitecture.md, HistoryArchitecture.md(둘 다 "현재는 완전 동기"로 서술된 부분이 있다면 이번 결정으로 갱신 필요 — 다음 문서 정리 세션에서 반영).
+
+기존 호출부(index.html, ui/CueList.js)는 수정하지 않았다. execute()와 undo()/redo()를 fire-and-forget으로 호출하던 기존 코드는 그대로 동작한다.
+
+
+# D-020
+
+## 새로고침으로 복원된 Page의 media는 CommandBus.bootstrapMediaCache()로 별도 채운다 (사용자 Command와 앱 부트스트랩 책임 분리)
+
+### 결정
+
+CommandBus.execute()의 MEDIA_COMMANDS whitelist(ADD_PAGE/UPDATE_PAGE/INSERT_PAGE_AT)는 "사용자 Command 경로"만 커버한다. localStorage에서 복원되는 Page(store/AppStore.js 모듈 로드 시점에 state.presentation.pages로 직접 들어가는 부트스트랩 경로)는 이 whitelist를 거치지 않으므로 별도로 처리한다.
+
+command/CommandBus.js에 bootstrapMediaCache(pages) 함수를 신규로 export한다. 내부적으로 기존 preloadMedia()를 그대로 재사용해 인자로 받은 Page 배열 전체의 media를 MediaRuntimeCache에 채운다. dispatch나 History 기록은 하지 않는다.
+
+index.html은 초기화를 두 단계로 명시적으로 분리한다: (1) 모든 이벤트 핸들러(가사 추가/미디어 추가/Undo·Redo/저장/삭제 등) 등록은 동기로 즉시 끝낸다. (2) UI 생성(CueList/PreviewPanel/BroadcastOutput)은 별도 async 함수 initUI() 안에서 await bootstrapMediaCache(...) 완료 이후에만 이어진다. initUI() 호출 자체는 모든 핸들러 등록이 끝난 뒤, 스크립트 맨 끝에서 이루어진다.
+
+### 이유
+
+실사용 중 "이전 세션에 추가한 image Page를 클릭하면 Preview에서 '미디어를 찾을 수 없음'이 뜬다(새로 추가한 Page는 정상)"는 버그가 보고됐다. 처음에는 fake-indexeddb/jsdom 시뮬레이션으로 재현을 시도했으나 재현되지 않았고, 실제 브라우저에 임시 디버그 로그를 심어 콘솔 출력을 직접 확인한 끝에 원인을 확정했다.
+
+원인: store/AppStore.js의 state.presentation 초기값은 모듈 로드 시점에 loadPresentation()(localStorage)으로 직접 채워진다. 이 경로는 CommandBus.execute()를 전혀 거치지 않으므로, 거기 담긴 image/video Page의 mediaId는 preloadMedia()가 한 번도 호출되지 않은 채로 남는다. 이후 그 Page를 클릭(SELECT_PAGE)해도 SELECT_PAGE는 MEDIA_COMMANDS에 없는 Command라 캐시를 채우지 않으므로, MediaRuntimeCache.peek()이 영구히 null을 반환한다.
+
+새로 추가한 Page가 정상이었던 이유는 ADD_PAGE가 MEDIA_COMMANDS에 포함되어 preloadMedia()를 정상적으로 거치기 때문이다 — 즉 버그는 "media resolve 로직 자체"가 아니라 "그 로직을 타지 않는 경로(부트스트랩)가 따로 있었다"는 데 있었다.
+
+처음 시도한 await 기반 해법(index.html 초기화 블록 전체를 await bootstrapMediaCache(...) 뒤에 순차 배치)은 부작용이 있었다 — 그 아래에 위치한 모든 버튼 이벤트 리스너 등록이 IndexedDB 조회가 끝날 때까지 지연되어, 부트스트랩이 느리면 앱이 일시적으로 먹통처럼 보일 수 있었다.
+
+두 번째 시도로 fire-and-forget(스크립트 최상단에서 await 없이 호출)으로 바꿔 이 문제를 피했으나, 이는 PresenterState(selectedPageId/livePageId)가 항상 초기값 null로 시작한다는 사실에 기댄 "레이스에 의존하는" 설계라는 지적(GPT 리뷰)을 받았다 — 동작은 우연히 맞아떨어지지만 견고한 구조는 아니라는 판단에 동의해, 최종적으로 "이벤트 핸들러 등록"과 "UI 생성"을 initUI()라는 명시적 async 함수로 분리하는 구조로 재수정했다. bootstrapMediaCache()의 완료는 UI 생성만 지연시키고 핸들러 등록에는 전혀 영향을 주지 않으므로, await 기반 해법의 부작용 없이도 초기화 순서를 레이스가 아니라 코드 구조로 보장한다.
+
+### 결과
+
+영향 받는 파일: command/CommandBus.js(bootstrapMediaCache 신규 export, preloadMedia 재사용), index.html(핸들러 등록/UI 생성 순서를 initUI() async 함수로 명시적 분리).
+
+영향 받지 않는 파일: ui/PreviewPanel.js, ui/CueList.js, output/BroadcastOutput.js, output.html — 모두 D-019에서 만든 경로를 그대로 사용하며, 이번 결정으로 수정되지 않았다.
+
+디버깅 과정에서 ui/PreviewPanel.js, ui/CueList.js, index.html, output/BroadcastOutput.js, command/CommandBus.js에 심었던 임시 console.log('[DEBUG-N] ...') 13곳은 원인 확정 후 전부 제거했다.
+
+영향 받는 문서: CurrentState.md 섹션 9-2(원인 재정정), CommandBusArchitecture.md(다음 문서 정리 세션에서 bootstrapMediaCache 반영 필요).

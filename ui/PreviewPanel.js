@@ -18,6 +18,7 @@
 
 import { subscribe, getState } from '../store/AppStore.js'
 import { createPageView } from '../view/PageView.js'
+import { peek as peekMediaCache } from '../media/MediaRuntimeCache.js'
 
 export function createPreviewPanel(containerEl) {
   // ── 초기 렌더링 ──────────────────────────
@@ -44,9 +45,18 @@ export function createPreviewPanel(containerEl) {
       return
     }
 
-    // Future: media 조회
-    // const media = state.media[page.mediaId] ?? null
-    const media = null
+    // Step6(2026-06-27): MediaRuntimeCache에서 동기 조회. command/
+    // CommandBus.js의 preloadMedia()가 ADD_PAGE/UPDATE_PAGE/INSERT_PAGE_AT
+    // 처리 중에 이미 캐시를 채워둔 상태라고 가정한다 — 이 함수는 절대
+    // IndexedDB를 직접 읽지 않는다(View는 동기 유지 원칙).
+    // page.mediaId가 없는 텍스트 Page는 peek(undefined) → null이라
+    // 기존 동작과 동일하다.
+    //
+    // 새로고침 등으로 복원된 Page(localStorage → AppStore 부트스트랩,
+    // CommandBus를 거치지 않음)는 index.html이 부팅 시 1회
+    // bootstrapMediaCache()를 호출해 미리 캐시를 채워둔다 — 그렇지
+    // 않으면 여기서 캐시 미스가 난다(실사용 중 발견, 2026-06-27).
+    const media = peekMediaCache(page.mediaId)
 
     containerEl.innerHTML = ''
     containerEl.appendChild(createPageView(page, media))

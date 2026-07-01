@@ -53,10 +53,71 @@ export function createTextPage({
     textShadow,      // 그림자 on/off. 세부 오프셋/불투명도 조정 없음(범위 단순화).
 
     // ── Future (미구현) ────────────────────
-    // mediaId: null,           // 전경 미디어
     // backgroundMediaId: null, // 배경 미디어
     // backgroundColor: null,   // 배경 단색
     // stylePresetId: null,     // StylePreset 도입 시
+  }
+}
+
+/**
+ * 이미지 Page 생성 (Step6, 2026-06-27)
+ *
+ * 텍스트 Page와 동일한 개념의 Page다 — CueList에 들어가고, 클릭하면
+ * 미리보기/송출되는 흐름은 완전히 같다. 콘텐츠 타입만 다르다.
+ *
+ * 이번 MVP 단계에서는 의도적으로 최소 필드만 가진다: id, type, mediaId.
+ * fit(cover/contain) 같은 표현 옵션은 후속 단계 — 목표는 우선 CueList →
+ * Preview → Output 파이프라인을 완성하는 것이다(2026-06-27 합의).
+ *
+ * mediaId가 가리키는 실제 Blob은 이 파일이 알지 못한다(media/MediaStore.js
+ * 책임). Page는 참조만 들고 있다 — blob URL 같은 휘발성 값은 절대 여기에
+ * 들어가지 않는다.
+ *
+ * @param {{ mediaId: string }} params
+ */
+export function createImagePage({ mediaId } = {}) {
+  if (!mediaId || typeof mediaId !== 'string') {
+    throw new Error('[Page] createImagePage: mediaId는 필수 문자열이다')
+  }
+
+  return {
+    // ── Identity ──────────────────────────
+    id: generateId(),
+    type: 'image',
+
+    // ── Content ───────────────────────────
+    mediaId, // IndexedDB(MediaStore)에 저장된 Media 레코드 참조
+
+    // ── Future (미구현) ────────────────────
+    // fit: 'cover',  // 'cover' | 'contain' — 표현 옵션, 후속 단계
+  }
+}
+
+/**
+ * 영상 Page 생성 (Step6, 2026-06-27)
+ *
+ * createImagePage와 동일한 설계 — 최소 필드(id, type, mediaId)만 가진다.
+ * loop/autoplay 같은 재생 옵션은 후속 단계.
+ *
+ * @param {{ mediaId: string }} params
+ */
+export function createVideoPage({ mediaId } = {}) {
+  if (!mediaId || typeof mediaId !== 'string') {
+    throw new Error('[Page] createVideoPage: mediaId는 필수 문자열이다')
+  }
+
+  return {
+    // ── Identity ──────────────────────────
+    id: generateId(),
+    type: 'video',
+
+    // ── Content ───────────────────────────
+    mediaId,
+
+    // ── Future (미구현) ────────────────────
+    // loop: false,
+    // autoplay: false,
+    // muted: true,
   }
 }
 
@@ -76,9 +137,20 @@ export function updatePage(page, changes) {
 // Page 검증
 // ─────────────────────────────────────────
 
+/**
+ * Page 검증
+ *
+ * type별로 필요한 최소 필드까지 함께 검증한다(Step6, 2026-06-27) — type만
+ * 보고 통과시키면 mediaId 없는 image/video Page가 통과해버릴 수 있다.
+ */
 export function isValidPage(page) {
   if (!page || typeof page !== 'object') return false
   if (!page.id || typeof page.id !== 'string') return false
-  if (!['text'].includes(page.type)) return false // 미래: 'image', 'video' 추가
+  if (!['text', 'image', 'video'].includes(page.type)) return false
+
+  if (page.type === 'image' || page.type === 'video') {
+    if (!page.mediaId || typeof page.mediaId !== 'string') return false
+  }
+
   return true
 }

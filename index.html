@@ -455,6 +455,8 @@
           <button class="btn btn-ghost" id="new-page-btn" style="display:none">새 Page</button>
           <button class="btn btn-ghost" id="clear-btn">초기화</button>
           <button class="btn btn-ghost" id="save-btn" style="display:none">저장</button>
+          <button class="btn btn-ghost" id="add-media-btn">미디어 추가</button>
+          <input type="file" id="media-file-input" accept="image/*,video/*" style="display:none">
           <button class="btn btn-primary" id="import-btn">가사 추가</button>
         </div>
       </div>
@@ -521,15 +523,56 @@
 </div>
 
 <script type="module">
-  import { createTextPage } from './domain/Page.js'
+  import { createTextPage, createImagePage, createVideoPage } from './domain/Page.js'
   import { getState, getSelectedPage, subscribe, registerSubscriber } from './store/AppStore.js'
-  import { execute, setHistoryHook } from './command/CommandBus.js'
+  import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
   import { PersistenceSubscriber } from './persistence/PersistenceSubscriber.js'
   import { HistoryHook, undo, redo, canUndo, canRedo } from './history/HistoryManager.js'
   import { importLyrics } from './utils/lyricsImport.js'
+  import { generateId } from './utils/id.js'
+  import { put as putMedia } from './media/MediaStore.js'
   import { createCueList } from './ui/CueList.js'
   import { createPreviewPanel } from './ui/PreviewPanel.js'
   import { createBroadcastOutput } from './output/BroadcastOutput.js'
+
+  // Step6(2026-06-27, 실사용 버그 수정 → GPT 리뷰로 구조 개선):
+  // localStorage에서 복원된 Page(AppStore.js 모듈 로드 시점에 이미
+  // state.presentation.pages로 들어가 있음 — CommandBus.execute()를 거치지
+  // 않은 경로)는 MediaRuntimeCache가 비어있는 채로 시작한다. 클릭
+  // (SELECT_PAGE — media와 무관한 Command)해도 캐시가 한 번도 채워진 적이
+  // 없어 "미디어를 찾을 수 없음"이 뜬다(실사용 중 발견, 브라우저 콘솔
+  // 로그로 원인 확정).
+  //
+  // 초기 구현은 fire-and-forget(await 없이 호출)이었다 — PresenterState
+  // (selectedPageId/livePageId)가 항상 초기값 null로 시작한다는 사실에
+  // 기댄 "레이스에 의존하는" 설계였다. 동작은 했지만 견고하지 않다는
+  // 지적(GPT 리뷰)을 받아, 초기화 순서를 명시적으로 보장하는 구조로
+  // 바꿨다:
+  //   - bootstrapMediaCache()는 await로 완료를 기다린다.
+  //   - 단, 이 await는 "UI 생성"(CueList/PreviewPanel/BroadcastOutput)만
+  //     지연시킨다. Undo/Redo 버튼, 가사 추가, 미디어 추가 등 모든 이벤트
+  //     핸들러 등록은 이 await와 무관하게 즉시(동기로) 끝난다 — 그래서
+  //     IndexedDB 조회가 오래 걸려도 버튼 자체는 처음부터 눌리고, 다만
+  //     "화면에 아직 아무것도 안 그려진" 짧은 공백만 생긴다(부트스트랩
+  //     Page가 없으면 이 공백은 사실상 0에 가깝다).
+  //   - 캐시 write는 여전히 CommandBus(이 함수가 내부적으로 재사용하는
+  //     preloadMedia)에서만 일어난다는 원칙은 그대로 유지된다 —
+  //     bootstrapMediaCache는 새로운 쓰기 경로가 아니라 "사용자 Command"와
+  //     "앱 부트스트랩"을 분리한 별도 진입점일 뿐이다.
+  //
+  // 남은 특성(새로운 문제 아님, fire-and-forget이든 지금 구조든 동일):
+  // UI(CueList/PreviewPanel)가 아직 생성되기 전에 사용자가 버튼을 눌러
+  // execute()가 실행되면, dispatch()는 정상적으로 일어나지만 아직
+  // 구독자가 없어 화면 갱신은 즉시 일어나지 않는다. UI가 생성되는 순간
+  // createPreviewPanel()/createCueList()가 각각 render(getState())로
+  // 최신 state를 한 번 그려주므로 자연히 따라잡는다.
+  async function initUI() {
+    await bootstrapMediaCache(getState().presentation.pages)
+
+    createCueList(document.getElementById('cue-list-el'))
+    createPreviewPanel(document.getElementById('preview-panel'))
+    createBroadcastOutput()
+  }
 
   // ── Persistence 등록 (D-015, Mutation Subscriber) ──
   registerSubscriber(PersistenceSubscriber)
@@ -597,10 +640,14 @@
 
   refreshHistoryButtons() // 초기 상태 동기화
 
-  // ── 초기화 ───────────────────────────────
-  createCueList(document.getElementById('cue-list-el'))
-  createPreviewPanel(document.getElementById('preview-panel'))
-  createBroadcastOutput()
+  // ── UI 생성 ──────────────────────────────
+  //
+  // 이 지점 이전의 모든 이벤트 핸들러(가사 추가, 미디어 추가, Undo/Redo,
+  // 저장, 삭제 등)는 이미 전부 동기로 등록이 끝난 상태다 — initUI()의
+  // await(IndexedDB 조회)가 아무리 오래 걸려도 버튼 자체는 처음부터
+  // 정상적으로 눌린다. initUI()가 지연시키는 건 오직 "화면에 무언가
+  // 그려지는 시점"(CueList/PreviewPanel/BroadcastOutput 생성)뿐이다.
+  initUI()
 
   // ── 모드 전환 (TODO-001, Phase B: DOM → state 기반) ──
   // 클릭은 더 이상 app.className을 직접 바꾸지 않는다. execute()로
@@ -673,6 +720,52 @@
     }).forEach(page => execute({ type: 'ADD_PAGE', payload: { page } }))
 
     document.getElementById('lyrics-input').value = ''
+  })
+
+  // ── Editor: 미디어 추가 (Step6, 2026-06-27) ──
+  //
+  // 버튼 클릭 → 숨겨진 file input 클릭 트리거 → 파일 선택 → MediaStore에
+  // 저장 → mediaId로 Page 생성 → ADD_PAGE. 하나의 버튼/input으로 받고
+  // MIME 타입(file.type)으로 image/video를 자동 판별한다(2026-06-27 합의
+  // — 이미지/영상 별도 버튼은 필요해지면 나중에 추가).
+  //
+  // <input type="file">은 여러 파일을 한 번에 선택할 수 있으므로(멀티
+  // 선택), 선택된 파일 각각에 대해 MediaStore.put() → ADD_PAGE를 순서대로
+  // 수행한다 — 가사 추가의 forEach 패턴과 동일한 결로, CommandBus의
+  // 직렬 큐가 순서를 보장하므로 fire-and-forget으로 연속 호출해도
+  // 안전하다(D-019 참조).
+  const mediaInput = document.getElementById('media-file-input')
+
+  document.getElementById('add-media-btn').addEventListener('click', () => {
+    mediaInput.click()
+  })
+
+  mediaInput.addEventListener('change', async () => {
+    const files = Array.from(mediaInput.files ?? [])
+    if (files.length === 0) return
+
+    for (const file of files) {
+      const mediaId = generateId()
+      await putMedia(mediaId, file)
+
+      let page
+      if (file.type.startsWith('image/')) {
+        page = createImagePage({ mediaId })
+      } else if (file.type.startsWith('video/')) {
+        page = createVideoPage({ mediaId })
+      } else {
+        // image/video가 아닌 파일은 추가하지 않는다 — accept 속성으로
+        // 대부분 걸러지지만, 운영체제 파일 선택창에서 우회될 수 있으므로
+        // 방어적으로 한 번 더 확인한다.
+        console.warn('[index.html] 지원하지 않는 파일 타입:', file.type, file.name)
+        continue
+      }
+
+      execute({ type: 'ADD_PAGE', payload: { page } })
+    }
+
+    // 같은 파일을 다시 선택해도 change 이벤트가 발생하도록 초기화한다.
+    mediaInput.value = ''
   })
 
   // ── Editor: 저장 (UPDATE_PAGE) ───────────

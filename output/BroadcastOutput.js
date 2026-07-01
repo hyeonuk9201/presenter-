@@ -34,8 +34,14 @@ export function createBroadcastOutput() {
     const page = state.presentation.pages.find(p => p.id === livePageId) ?? null
     if (!page) return
 
-    // Future: media 조회 후 함께 전송
-    // const media = state.media[page.mediaId] ?? null
+    // Step6(2026-06-27): media 자체는 전송하지 않는다. page.mediaId가
+    // 이미 page 객체 안에 포함되어 있으므로(domain/Page.js의
+    // createImagePage/createVideoPage), mediaId만 실려서 그대로
+    // 전달된다. output.html이 자신의 IndexedDB에서 직접 resolve한다
+    // (메인 탭에서 만든 blob URL은 다른 탭에서 못 쓰기 때문 — 탭 경계
+    // 문제, media/MediaRuntimeCache.js 헤더 참조). 이 파일은 그대로
+    // 무수정으로 유지된다 — Page를 통째로 전송하는 기존 구조가 mediaId
+    // 추가에도 자동으로 대응한다.
     channel.postMessage({ type: 'SHOW_PAGE', page })
   })
 

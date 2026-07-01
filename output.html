@@ -42,6 +42,8 @@
 
 <script type="module">
   import { createPageView } from './view/PageView.js'
+  import { get as getMedia } from './media/MediaStore.js'
+  import { fill as fillMediaCache, has as hasMediaCached, peek as peekMediaCache } from './media/MediaRuntimeCache.js'
 
   const CHANNEL_NAME = 'tc-presenter-output'
   const container = document.getElementById('output-container')
@@ -52,7 +54,7 @@
 
   channel.onmessage = ({ data }) => {
     if (data.type === 'CLEAR') {
-      showStandby()
+      clearToStandby()
       return
     }
 
@@ -61,13 +63,72 @@
     }
   }
 
-  // ── 렌더링 ───────────────────────────────
+  // ── Media Resolve (Step6, 2026-06-27) ───────
+  //
+  // output.html은 메인 탭과 완전히 독립된 탭/창(별도 JS realm)이다. 메인
+  // 탭에서 만든 blob URL은 여기서 쓸 수 없으므로, mediaId만 메시지로 받고
+  // 이 탭 자신의 IndexedDB(MediaStore)와 자신의 MediaRuntimeCache로 직접
+  // resolve한다(command/CommandBus.js의 preloadMedia()와 동일한 책임을
+  // 이 탭에서 별도로 수행 — output.html은 CommandBus를 거치지 않는
+  // BroadcastChannel 경로이기 때문에 같은 로직을 한 번 더 둘 수밖에 없다).
+  //
+  // 화면 갱신 정책(2026-06-27 합의): mediaId를 받으면 즉시 화면을 지우지
+  // 않는다. resolve(IndexedDB 조회)가 끝날 때까지 현재 화면을 그대로
+  // 유지하고, 끝나면 한 번에 새 Page로 교체한다. 로딩 UI/placeholder는
+  // 이번 MVP 범위에서 넣지 않는다 — 라이브 방송 화면에서 빈 화면/깜빡임이
+  // 잠깐의 구화면 유지보다 더 거슬린다는 판단.
+  //
+  // 순서 보장: CommandBus.js와 동일한 이유로 직렬 큐가 필요하다. 여러
+  // SHOW_PAGE가 연달아 도착했을 때(예: CueList 빠른 연속 클릭), media
+  // 있는 Page(IndexedDB 조회로 지연)와 media 없는 Page(즉시 처리)가
+  // 섞이면 호출 순서와 화면 반영 순서가 달라질 수 있다 — command/
+  // CommandBus.js의 D-019(Decisions.md)와 동일한 문제, 동일한 해법.
+  //
+  // CLEAR도 이 큐를 거친다. SHOW_PAGE(media, resolve 중) 다음에 CLEAR가
+  // 도착했을 때 CLEAR를 즉시 처리해버리면, 한참 뒤 SHOW_PAGE의 resolve가
+  // 끝나면서 standby 화면을 다시 덮어써 CLEAR가 무시된 것처럼 보이는
+  // 문제가 생긴다 — CLEAR도 같은 큐에 태워 도착 순서대로 처리한다.
+  let renderQueue = Promise.resolve()
+
   function showPage(page) {
-    container.innerHTML = ''
-    // Future: media 수신 시 두 번째 인자로 전달
-    container.appendChild(createPageView(page, null))
+    renderQueue = renderQueue.then(() => renderPage(page)).catch(() => {})
   }
 
+  function clearToStandby() {
+    renderQueue = renderQueue.then(() => showStandby()).catch(() => {})
+  }
+
+  async function renderPage(page) {
+    let media = null
+
+    if (page.mediaId) {
+      media = await resolveMedia(page.mediaId)
+    }
+
+    // resolve가 끝난 뒤에만 화면을 교체한다 — 그 전까지는 직전 화면 유지.
+    container.innerHTML = ''
+    container.appendChild(createPageView(page, media))
+  }
+
+  /**
+   * mediaId → blob URL. 이미 이 탭의 캐시에 있으면 IndexedDB를 다시
+   * 읽지 않는다(command/CommandBus.js의 preloadMedia()와 동일한 패턴).
+   */
+  async function resolveMedia(mediaId) {
+    if (hasMediaCached(mediaId)) {
+      return peekMediaCache(mediaId)
+    }
+
+    const record = await getMedia(mediaId)
+    if (!record) {
+      console.warn('[output.html] mediaId에 해당하는 레코드를 찾을 수 없음:', mediaId)
+      return null
+    }
+
+    return fillMediaCache(mediaId, record.blob)
+  }
+
+  // ── 렌더링 ───────────────────────────────
   function showStandby() {
     container.innerHTML = ''
     container.appendChild(standby)

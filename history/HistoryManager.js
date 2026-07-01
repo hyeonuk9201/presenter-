@@ -43,6 +43,26 @@
  *     Registry가 없는 현재 단계에서는 Payload만 저장해도 재실행 시 다시
  *     Command로 변환할 registry가 없기 때문이다. CommandRegistry 도입 시
  *     undoCommand/redoCommand를 다시 순수 payload로 정리할 수 있다).
+ *
+ * undo()/redo() async 전환 (Step6, 2026-06-27 — 재귀 기록 방지 타이밍 버그 수정):
+ *   - 문제: CommandBus.execute()가 media 있는 Command에 대해 IndexedDB
+ *     조회를 await하면서 async가 됐다. 기존 undo()/redo()는 sync 함수라
+ *     commandBusExecute(entry.undoCommand)가 반환한 Promise를 기다리지
+ *     않고 finally에서 곧바로 isApplyingHistory = false로 되돌렸다.
+ *     그러면 실제 dispatch()(및 afterExecute 호출)는 그보다 한참 뒤,
+ *     이미 isApplyingHistory가 풀린 상태에서 일어나 재귀 기록 방지가
+ *     무력화될 수 있었다(fake-indexeddb로 재현 확인 — 현재는 INSERT_PAGE_AT이
+ *     computeInverse에 케이스가 없어 우연히 안전했을 뿐, computeInverse에
+ *     INSERT_PAGE_AT 케이스가 추가되는 순간 즉시 터지는 잠재 버그였다).
+ *   - 해결: undo()/redo()를 async function으로 바꾸고
+ *     await commandBusExecute(entry.undoCommand)로 실제 replay(=dispatch
+ *     + afterExecute 호출)가 완전히 끝난 뒤에야 isApplyingHistory를
+ *     해제한다.
+ *   - 호출부(index.html의 Ctrl+Z 핸들러 등)는 undo(CommandBus.execute)를
+ *     호출하고 끝내는 fire-and-forget 패턴이었다면 그대로 동작한다(반환된
+ *     Promise를 안 받아도 무방) — 다만 호출 직후 동기적으로 canUndo()를
+ *     확인하는 코드가 있다면 그 시점의 스택 상태는 이미 pop된 뒤이므로
+ *     영향 없음(스택 변경 자체는 await 이전에 동기로 일어난다, 아래 참조).
  */
 
 // ─────────────────────────────────────────
@@ -241,14 +261,20 @@ export function afterExecute(action, prevState) {
  * HistoryManager가 CommandBus를 직접 import하지 않고 주입받는 이유는
  * 순환 의존(CommandBus → Hook 등록 시점에 HistoryManager, HistoryManager → CommandBus)을
  * 피하기 위함이다. 실제 연결(Step5)에서 CommandBus.execute를 넘겨준다.
+ *
+ * async로 전환(Step6) — commandBusExecute가 반환하는 Promise가 실제
+ * dispatch + afterExecute 호출까지 끝난 뒤에 resolve되므로, 그걸 await해야
+ * isApplyingHistory를 안전한 시점에 해제할 수 있다 (파일 헤더 참조).
+ *
+ * @returns {Promise<boolean>}
  */
-export function undo(commandBusExecute) {
+export async function undo(commandBusExecute) {
   const entry = undoStack.pop()
   if (!entry) return false
 
   isApplyingHistory = true
   try {
-    commandBusExecute(entry.undoCommand)
+    await commandBusExecute(entry.undoCommand)
   } finally {
     isApplyingHistory = false
   }
@@ -257,13 +283,16 @@ export function undo(commandBusExecute) {
   return true
 }
 
-export function redo(commandBusExecute) {
+/**
+ * @returns {Promise<boolean>}
+ */
+export async function redo(commandBusExecute) {
   const entry = redoStack.pop()
   if (!entry) return false
 
   isApplyingHistory = true
   try {
-    commandBusExecute(entry.redoCommand)
+    await commandBusExecute(entry.redoCommand)
   } finally {
     isApplyingHistory = false
   }
