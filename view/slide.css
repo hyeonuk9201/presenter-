@@ -31,6 +31,18 @@
   /* verticalAlign은 JS에서 data-vertical-align으로 설정 */
 }
 
+/* ── 미디어 레이어 (이미지/영상) ───────────── */
+.media-layer {
+  position: absolute;
+  inset: 0;
+
+  /* .media-layer에 크기가 없으면 img/video의 width:100%/height:100%가
+     기준으로 삼을 부모 크기가 없어, 브라우저가 원본 픽셀 크기로 렌더링하고
+     .slide의 overflow:hidden에 의해 잘려 보이는 버그가 있었다(2026-07-02 수정).
+     .text-layer와 동일하게 position:absolute + inset:0으로 .slide 전체를
+     기준 삼도록 고정한다. */
+}
+
 /* verticalAlign 처리 */
 .text-layer:has([data-vertical-align="top"])    { align-items: flex-start; }
 .text-layer:has([data-vertical-align="middle"]) { align-items: center; }
