@@ -89,9 +89,9 @@ function createImageLayer(media) {
 
 /**
  * 영상 레이어. media(blob URL)가 없으면 "미디어 없음" placeholder를 보여준다.
- * loop/autoplay/muted 같은 재생 옵션은 후속 단계 — 지금은 controls만 노출해
- * 사용자가 직접 재생/정지할 수 있게 한다(2026-06-27 합의, 최소 파이프라인
- * 완성이 목표).
+ * autoplay/muted/loop는 고정 default로 구현됨(9-5, 2026-07-02) — controls도
+ * 함께 노출해 필요 시 수동 제어 가능하게 한다. Page별 on/off 옵션은 범위 밖
+ * (domain/Page.js의 createVideoPage 주석 참조).
  */
 function createVideoLayer(media) {
   const layer = document.createElement('div')
