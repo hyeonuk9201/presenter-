@@ -106,6 +106,9 @@ function createVideoLayer(media) {
   video.className = 'slide-video'
   video.src = media
   video.controls = true
+  video.autoplay = true
+  video.muted = true // 브라우저 autoplay 정책상 필수 — 사용자가 원하는 default(9-5, 2026-07-02)
+  video.loop = true
   video.style.width = '100%'
   video.style.height = '100%'
   video.style.objectFit = 'contain'

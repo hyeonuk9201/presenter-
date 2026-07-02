@@ -441,11 +441,19 @@ fake-indexeddb 기반 Node 스크립트로 검증(브라우저 시각 확인 아
 
 **다음 세션에서 재발 시 확인할 것**: 재현 조건을 다시 정확히 좁히고(어떤 순서/타이밍에서 발생했는지), `output.html` 자신의 콘솔(메인 탭과 별개)에 로그를 심어 원인을 추적한다. 지금까지의 디버그 로그는 전부 메인 탭 콘솔 기준이었다.
 
-## 9-5. 다음 세션 TODO: 영상(video) Page 자동재생
+## 9-5. 영상(video) Page 자동재생 (완료, 2026-07-02)
 
-현재 `view/PageView.js`의 `createVideoLayer`는 `controls`만 켜고 `autoplay`/`loop`/`muted`는 넣지 않았다(`domain/Page.js`의 `createVideoPage` 주석에도 "Future: loop/autoplay/muted"로 명시돼 있던 의도된 MVP 범위). 실사용 확인 결과 Live 송출 시 영상이 자동재생되지 않고 클릭으로 직접 재생해야 하는데, 방송 진행 중 Output 화면에서 이 조작이 필요한 건 불편하다는 피드백을 받았다.
+기존 `view/PageView.js`의 `createVideoLayer`는 `controls`만 켜고 `autoplay`/`loop`/`muted`는 넣지 않아, Live 송출 시 영상이 자동재생되지 않고 클릭으로 직접 재생해야 하는 불편함이 있었다.
 
-**다음 세션에서 처리**: `<video>`에 `autoplay` + `muted`(브라우저 autoplay 정책상 muted 없이는 대부분 자동재생이 차단됨) 추가 검토. `loop` 여부, Live 전환 시점에 처음부터 재생할지(`currentTime = 0` 리셋) 등도 함께 결정 필요.
+**결정 및 구현**:
+- `autoplay` + `muted` 추가 — 브라우저 autoplay 정책상 muted 없이는 차단되며, 사용자가 원하는 default로 확인됨(음소거 아이콘 등 추가 UI는 이번 범위 밖).
+- `loop` 추가 — 영상 종료 시 반복 재생.
+- currentTime 리셋 관련 별도 코드는 추가하지 않음 — Page 재클릭 시 `createPageView()`가 매번 새 `<video>` 엘리먼트를 생성하는 기존 구조상 자연히 처음부터(`currentTime=0`) 재생되므로 추가 구현 불필요.
+- Page별로 켜고 끄는 옵션이 아니라 `view/PageView.js`에 고정 기본값으로 구현(`domain/Page.js`의 `createVideoPage` 주석 참조) — Page 단위 설정이 필요해지면 그때 필드로 승격.
+
+**수정 파일**: `view/PageView.js`(`createVideoLayer`), `domain/Page.js`(stale "Future" 주석 정리).
+
+**아직 검증 안 됨**: 브라우저 실사용 테스트 필요 — 다음 확인 시 진행.
 
 ## 문서 정리 (부수 작업)
 

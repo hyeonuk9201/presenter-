@@ -97,7 +97,11 @@ export function createImagePage({ mediaId } = {}) {
  * 영상 Page 생성 (Step6, 2026-06-27)
  *
  * createImagePage와 동일한 설계 — 최소 필드(id, type, mediaId)만 가진다.
- * loop/autoplay 같은 재생 옵션은 후속 단계.
+ *
+ * autoplay/muted/loop(9-5, 2026-07-02)는 Page별로 설정 가능한 필드가 아니라
+ * view/PageView.js의 createVideoLayer()에 고정 기본값으로 구현했다 — 브라우저
+ * autoplay 정책상 muted 없이는 자동재생 자체가 차단되므로 항상 함께 켜진다.
+ * Page 단위로 켜고 끄는 옵션이 필요해지면 그때 필드로 승격한다.
  *
  * @param {{ mediaId: string }} params
  */
@@ -113,11 +117,6 @@ export function createVideoPage({ mediaId } = {}) {
 
     // ── Content ───────────────────────────
     mediaId,
-
-    // ── Future (미구현) ────────────────────
-    // loop: false,
-    // autoplay: false,
-    // muted: true,
   }
 }
 
