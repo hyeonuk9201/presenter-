@@ -475,6 +475,29 @@ fake-indexeddb 기반 Node 스크립트로 검증(브라우저 시각 확인 아
 ### 검증
 코드 리뷰로 로직 확인함. **실사용 테스트 필요**: Live 먼저 켜고 → Output 창 나중에 열기 → 즉시 정상 표시되는지 확인.
 
+## 9-7. 영상 위 텍스트 오버레이 (완료, 2026-07-02)
+
+### 요청 배경
+워십 영상 재생 중 가사/자막을 함께 띄우고 싶다는 실사용 요청. 코러스 가사 자막 같은 용도.
+
+### 발견: 이미 절반은 되어 있었음
+`index.html`의 에디터 UI(lyrics-input textarea + 스타일 사이드바)는 애초에 Page 타입을 구분하지 않고 동작하고 있었다 — video Page를 선택해도 텍스트/스타일 입력창이 그대로 뜨고, 저장(`UPDATE_PAGE`)도 `{ ...page, text, fontSize, color, ... }` 형태로 기존 Page에 필드를 그대로 얹는 구조라 video Page에 text가 저장되는 것 자체는 막혀있지 않았다. **막혀있던 건 `view/PageView.js`가 video 타입일 때 텍스트 레이어를 그리지 않던 것 하나뿐.**
+
+### 구현
+- `view/PageView.js`: `page.type === 'video'`이고 `page.text`가 있으면 `createVideoLayer()` 다음에 기존 `createTextLayer()`를 그대로 재사용해 덧붙인다. `createTextPage`와 완전히 동일한 필드명(text/fontSize/color/lineHeight/fontWeight/textStroke/textShadow/horizontalAlign/verticalAlign)을 그대로 재사용하므로 별도 스타일 시스템이 필요 없었다.
+- `domain/Page.js`: `createVideoPage()`는 그대로 두되(생성 시점엔 text 없음, 나중에 `UPDATE_PAGE`로 얹힘), 이 흐름을 주석으로 명시.
+- `view/slide.css`: `.text-layer`에 `pointer-events: none` 추가 — 텍스트가 하단/상단에만 있어도 레이어 자체는 화면 전체(inset:0)를 덮어서, 영상 위에 얹혔을 때 video의 native controls 클릭을 가로채는 문제를 리뷰 중 발견해 같이 수정했다. 순수 텍스트 Page는 클릭 가능한 요소가 없어 영향 없음.
+
+### 범위 밖으로 남긴 것
+- image Page에는 아직 적용 안 함(요청이 video 한정이었음) — 필요해지면 `createPageView()`의 image 분기에 동일한 3줄만 추가하면 됨.
+- CueList 미리보기 라벨(`ui/CueList.js`의 `getPreviewText`)은 video Page를 여전히 `(video)`로만 표시 — 오버레이 텍스트 유무는 안 드러남. 사소한 UX 개선 항목으로 필요시 별도 처리.
+
+### 변경 파일
+`view/PageView.js`, `domain/Page.js`, `view/slide.css`
+
+### 검증
+코드 리뷰로 로직 확인함. **실사용 테스트 필요**: 영상 Page 선택 → 가사 입력 → 저장 → 영상 위에 텍스트가 겹쳐 보이는지, video controls 클릭이 여전히 되는지 확인.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

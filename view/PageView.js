@@ -45,6 +45,15 @@ export function createPageView(page, media = null) {
     slide.appendChild(createImageLayer(media))
   } else if (page.type === 'video') {
     slide.appendChild(createVideoLayer(media))
+
+    // 영상 위 텍스트 오버레이(2026-07-02, 실사용 요청). 에디터 UI(lyrics-input
+    // + 스타일 사이드바)는 이미 Page 타입과 무관하게 동작해 UPDATE_PAGE로
+    // text/fontSize/color 등을 어떤 타입의 Page에도 저장할 수 있었다 —
+    // 막혀있던 건 여기, video 타입일 때 텍스트 레이어를 안 그리던 것뿐이다.
+    // text가 없으면(일반 영상 Page) 기존과 동일하게 아무것도 안 그린다.
+    if (page.text) {
+      slide.appendChild(createTextLayer(page))
+    }
   }
 
   return slide

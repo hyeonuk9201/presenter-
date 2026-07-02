@@ -103,6 +103,14 @@ export function createImagePage({ mediaId } = {}) {
  * autoplay 정책상 muted 없이는 자동재생 자체가 차단되므로 항상 함께 켜진다.
  * Page 단위로 켜고 끄는 옵션이 필요해지면 그때 필드로 승격한다.
  *
+ * 텍스트 오버레이(9-7, 2026-07-02): 생성 시점엔 text 필드를 넣지 않는다.
+ * index.html의 에디터 UI(lyrics-input + 스타일 사이드바)가 이미 Page
+ * 타입과 무관하게 동작해, video Page 선택 후 텍스트/스타일 입력 →
+ * UPDATE_PAGE로 text/fontSize/color/... 필드가 나중에 얹힌다(createTextPage
+ * 필드와 완전히 동일한 이름 재사용 — view/PageView.js의 createTextLayer가
+ * 그대로 렌더링). text가 없으면(대부분의 영상 Page) 오버레이가 그려지지
+ * 않는다.
+ *
  * @param {{ mediaId: string }} params
  */
 export function createVideoPage({ mediaId } = {}) {
