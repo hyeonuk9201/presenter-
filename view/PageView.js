@@ -118,6 +118,10 @@ function createVideoLayer(media) {
   video.autoplay = true
   video.muted = true // 브라우저 autoplay 정책상 필수 — 사용자가 원하는 default(9-5, 2026-07-02)
   video.loop = true
+  video.playsInline = true // iOS Safari가 video를 OS 레벨 오버레이 평면으로 렌더링해
+                            // z-index/DOM 순서를 무시하고 항상 최상단에 그리는 문제 방지.
+                            // 영상+텍스트 오버레이(9-7)가 iPad에서 텍스트가 영상에
+                            // 가려 안 보이던 원인(2026-07-02, 실사용 발견).
   video.style.width = '100%'
   video.style.height = '100%'
   video.style.objectFit = 'contain'

@@ -515,6 +515,23 @@ dedupe 기준을 `livePageId` 값 비교에서 **Page 객체 참조 비교**로 
 ### 검증
 코드 리뷰로 로직 확인함. **실사용 테스트 필요**: 영상 Page를 Live로 띄운 상태에서 텍스트 오버레이 추가 → 저장 → Output에 즉시 반영되는지, Preview도 정상인지 확인.
 
+## 9-9. 버그 수정: iPad에서 영상 위 텍스트가 안 보임 — playsinline 누락 (2026-07-02, 9-8 직후 실사용 발견)
+
+### 증상
+9-8 수정 후에도 영상 위 텍스트 오버레이(9-7)가 Preview에서도 안 보임 — Output만의 문제가 아니었음.
+
+### 원인
+iOS Safari는 `<video>`에 `playsinline` 속성이 없으면 OS 레벨의 별도 비디오 오버레이 평면으로 렌더링한다. 이 평면은 페이지의 일반 DOM stacking(z-index, DOM 순서)을 완전히 무시하고 항상 최상단에 그려진다 — `.text-layer`가 코드상 `.media-layer` 뒤(위)에 정확히 붙어있어도, iOS에서는 video가 그 위를 덮어버린다. 데스크톱 브라우저에서는 재현되지 않는 iOS 전용 렌더링 특성이라 코드 리뷰만으로는 못 잡았다.
+
+### 수정
+`view/PageView.js`의 `createVideoLayer()`에 `video.playsInline = true` 추가.
+
+### 변경 파일
+`view/PageView.js`
+
+### 검증
+**실사용 테스트 필요**(iPad): 영상 Page에 텍스트 오버레이 추가 → 영상 위에 텍스트가 실제로 보이는지 확인. 이번엔 iOS 전용 렌더링 이슈라 코드 리뷰만으론 확신할 수 없음 — 반드시 iPad에서 직접 확인 필요.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
