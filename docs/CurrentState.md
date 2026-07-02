@@ -498,6 +498,23 @@ fake-indexeddb 기반 Node 스크립트로 검증(브라우저 시각 확인 아
 ### 검증
 코드 리뷰로 로직 확인함. **실사용 테스트 필요**: 영상 Page 선택 → 가사 입력 → 저장 → 영상 위에 텍스트가 겹쳐 보이는지, video controls 클릭이 여전히 되는지 확인.
 
+## 9-8. 버그 수정: Live 중인 Page를 편집해도 Output에 반영 안 됨 (2026-07-02, 9-7 직후 실사용 발견)
+
+### 증상
+영상 Page가 이미 Live인 상태에서 텍스트 오버레이(9-7)를 추가하고 저장해도 Output(및 재확인 필요하지만 보고 당시엔 Preview도 포함)에 반영되지 않음.
+
+### 원인
+9-6에서 만든 `sendState()`의 dedupe가 `livePageId` **값**만 비교했다 — 같은 Page가 계속 Live인 채로 내용만 바뀌는 경우(9-7 텍스트 오버레이가 정확히 이 케이스) `livePageId`는 그대로라 "안 바뀜"으로 판단해 전송 자체를 생략했다. Page 전환(다른 Page로 GO_LIVE)만 감지하고, "같은 Page의 내용 변경"은 놓치는 구조였다.
+
+### 수정
+dedupe 기준을 `livePageId` 값 비교에서 **Page 객체 참조 비교**로 변경. `dispatch()`의 `UPDATE_PAGE`는 `domain/Presentation.js`의 `replacePage()`를 거치며 매번 새 Page 객체를 만들기 때문에, "마지막으로 보낸 Page 객체 참조"와 다르면 무조건 재전송한다 — Page 전환과 내용 변경 둘 다 이 하나의 비교로 잡힌다.
+
+### 변경 파일
+`output/BroadcastOutput.js`
+
+### 검증
+코드 리뷰로 로직 확인함. **실사용 테스트 필요**: 영상 Page를 Live로 띄운 상태에서 텍스트 오버레이 추가 → 저장 → Output에 즉시 반영되는지, Preview도 정상인지 확인.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
