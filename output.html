@@ -63,6 +63,12 @@
     }
   }
 
+  // Live가 이미 켜진 뒤 이 창을 나중에 여는 경우, 지나간 SHOW_PAGE를
+  // 못 받아 STANDBY에 계속 멈춰있는 문제가 있었다(2026-07-02, 실사용
+  // 발견 — 더블모니터로 Output을 나중에 연결하는 실제 운영 상황과 동일).
+  // 메인 탭(output/BroadcastOutput.js)에 현재 상태 재전송을 요청한다.
+  channel.postMessage({ type: 'REQUEST_SYNC' })
+
   // ── Media Resolve (Step6, 2026-06-27) ───────
   //
   // output.html은 메인 탭과 완전히 독립된 탭/창(별도 JS realm)이다. 메인

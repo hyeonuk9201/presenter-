@@ -8,6 +8,14 @@
  *   2. BroadcastChannel로 Page 데이터를 전송한다.
  *   3. DOM을 모른다. 렌더링을 모른다.
  *   4. output.html이 어떻게 처리하는지 알지 못한다.
+ *
+ * REQUEST_SYNC (2026-07-02, 실사용 발견):
+ *   BroadcastChannel은 발신 시점에 존재하는 리스너에게만 전달된다 — Live를
+ *   먼저 켠 뒤 Output 창을 나중에 열면, 이미 지나간 SHOW_PAGE를 못 받아
+ *   Output이 STANDBY에 계속 멈춰있는 문제가 있었다(과거 9-4로 보고됐다가
+ *   "재현 안 됨"으로 종결된 것과 동일 원인으로 추정). output.html이 로드
+ *   시 REQUEST_SYNC를 보내면, 이 모듈이 livePageId 변경 여부와 무관하게
+ *   현재 상태를 즉시 재전송한다.
  */
 
 import { subscribe, getState } from '../store/AppStore.js'
@@ -18,20 +26,18 @@ export function createBroadcastOutput() {
   const channel = new BroadcastChannel(CHANNEL_NAME)
   let lastLivePageId = null
 
-  subscribe(({ state }) => {
-    const { livePageId } = state.presenterState
+  function sendState({ force = false } = {}) {
+    const { livePageId } = getState().presenterState
 
-    // livePageId가 바뀔 때만 전송
-    if (livePageId === lastLivePageId) return
+    if (!force && livePageId === lastLivePageId) return
     lastLivePageId = livePageId
 
     if (!livePageId) {
-      // 송출 해제
       channel.postMessage({ type: 'CLEAR' })
       return
     }
 
-    const page = state.presentation.pages.find(p => p.id === livePageId) ?? null
+    const page = getState().presentation.pages.find(p => p.id === livePageId) ?? null
     if (!page) return
 
     // Step6(2026-06-27): media 자체는 전송하지 않는다. page.mediaId가
@@ -43,7 +49,15 @@ export function createBroadcastOutput() {
     // 무수정으로 유지된다 — Page를 통째로 전송하는 기존 구조가 mediaId
     // 추가에도 자동으로 대응한다.
     channel.postMessage({ type: 'SHOW_PAGE', page })
-  })
+  }
+
+  subscribe(() => sendState())
+
+  channel.onmessage = ({ data }) => {
+    if (data.type === 'REQUEST_SYNC') {
+      sendState({ force: true })
+    }
+  }
 
   return {
     close: () => channel.close(),

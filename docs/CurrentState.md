@@ -453,7 +453,27 @@ fake-indexeddb 기반 Node 스크립트로 검증(브라우저 시각 확인 아
 
 **수정 파일**: `view/PageView.js`(`createVideoLayer`), `domain/Page.js`(stale "Future" 주석 정리).
 
-**아직 검증 안 됨**: 브라우저 실사용 테스트 필요 — 다음 확인 시 진행.
+**실사용 검증 완료(2026-07-02, iPad)**: 자동재생/무음/반복 정상 동작 확인.
+
+## 9-6. 버그 수정: Live 먼저 켠 뒤 Output을 나중에 열면 STANDBY에 멈춤 (2026-07-02, 실사용 발견)
+
+### 증상
+더블모니터 실사용 테스트 중 발견. Live 모드에서 이미 어떤 Page가 표시 중인 상태로, Output 창(두 번째 모니터)을 나중에 열면 STANDBY 화면에서 멈추고, CueList에서 아무 Page나 재클릭해야 정상 표시됨.
+
+과거 9-4로 보고됐다가 "재현 안 됨"으로 종결된 것과 동일 원인으로 추정 — 그때는 "새로고침하면 된다"고 정리됐는데, 진짜 트리거는 새로고침이 아니라 "Live 상태에서 Page 재클릭"이었을 가능성이 높다.
+
+### 원인
+`output/BroadcastOutput.js`는 Store의 `livePageId` 변경 시점에만 `SHOW_PAGE`를 BroadcastChannel로 전송한다. BroadcastChannel은 발신 시점에 존재하는 리스너에게만 전달되므로, Output 창이 그 시점에 아직 안 열려있었으면 메시지를 영영 못 받는다 — Output 쪽엔 "지금 상태가 뭔지" 능동적으로 물어보는 절차가 없었다.
+
+### 수정
+- `output.html`: 로드 시 `REQUEST_SYNC` 메시지를 채널에 전송
+- `output/BroadcastOutput.js`: `REQUEST_SYNC` 수신 시 `livePageId` 변경 여부와 무관하게 현재 상태를 강제 재전송(`sendState({ force: true })`)하도록 리팩터링. 기존 "변경 시에만 전송" 로직은 유지(dedupe).
+
+### 변경 파일
+`output.html`, `output/BroadcastOutput.js`
+
+### 검증
+코드 리뷰로 로직 확인함. **실사용 테스트 필요**: Live 먼저 켜고 → Output 창 나중에 열기 → 즉시 정상 표시되는지 확인.
 
 ## 문서 정리 (부수 작업)
 
