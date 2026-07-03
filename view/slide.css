@@ -24,6 +24,7 @@
 .text-layer {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   padding: 40px 60px;
   box-sizing: border-box;
@@ -36,12 +37,21 @@
      클릭이 아래 video로 통과하게 한다 — 순수 텍스트 Page에는 클릭
      가능한 요소가 없으므로 영향 없다. */
   pointer-events: none;
+
+  /* iOS Safari GPU 컴포지팅 문제(2026-07-02, playsinline 추가 후에도
+     재현): <video>는 하드웨어 디코딩 전용 합성 레이어에서 그려지는데,
+     이 레이어는 일반 DOM(z-index/DOM 순서)과 별개의 합성 단계라
+     z-index를 줘도 video 위로 올라오지 않는 경우가 있다. transform으로
+     이 요소를 자체 GPU 레이어로 승격시키면 video와 같은 합성 단계에
+     들어가 z-index가 정상적으로 먹힌다 — 흔히 쓰이는 iOS 우회법. */
+  transform: translateZ(0);
 }
 
 /* ── 미디어 레이어 (이미지/영상) ───────────── */
 .media-layer {
   position: absolute;
   inset: 0;
+  z-index: 1;
 
   /* .media-layer에 크기가 없으면 img/video의 width:100%/height:100%가
      기준으로 삼을 부모 크기가 없어, 브라우저가 원본 픽셀 크기로 렌더링하고

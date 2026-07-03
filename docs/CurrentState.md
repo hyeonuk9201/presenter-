@@ -532,6 +532,23 @@ iOS Safari는 `<video>`에 `playsinline` 속성이 없으면 OS 레벨의 별도
 ### 검증
 **실사용 테스트 필요**(iPad): 영상 Page에 텍스트 오버레이 추가 → 영상 위에 텍스트가 실제로 보이는지 확인. 이번엔 iOS 전용 렌더링 이슈라 코드 리뷰만으론 확신할 수 없음 — 반드시 iPad에서 직접 확인 필요.
 
+## 9-10. 버그 수정: playsinline 추가 후에도 iPad에서 텍스트가 여전히 안 보임 — GPU 컴포지팅 레이어 문제 (2026-07-02, 9-9 직후 실사용 발견)
+
+### 증상
+9-9(playsinline)까지 적용/재확인했는데도 영상 위 텍스트가 iPad에서 계속 안 보임. Pull 최신 반영 확인, 서버 재시작, 가사 저장 정상 동작(입력값 유지)까지 확인됐는데도 재현 — 순수 CSS stacking 문제로 좁혀짐.
+
+### 원인 (추정)
+iOS Safari에서 `<video>`는 하드웨어 디코딩 전용 GPU 합성 레이어에서 그려진다. 이 레이어는 일반 DOM 요소들의 합성 단계와 분리되어 있어, `.text-layer`가 DOM상 `.media-layer` 뒤에 있고 z-index도 명시해도 video 위로 올라오지 않을 수 있다 — video 자체가 자기 레이어에서 항상 나중에(위에) 합성되기 때문. `playsinline`은 iOS가 video를 OS 레벨 전체화면 오버레이로 띄우는 것만 막을 뿐, 이 GPU 합성 순서 문제는 별개다.
+
+### 수정
+`.text-layer`에 `transform: translateZ(0)` 추가 — 이 요소를 강제로 별도 GPU 합성 레이어로 승격시켜, video와 같은 합성 단계에 들어가게 한다. 이러면 z-index(`.text-layer: 2`, `.media-layer: 1`, 명시적으로 추가)가 정상적으로 작동한다. iOS Safari에서 "video가 z-index 무시하고 항상 위에 뜬다"는 문제의 흔한 우회법이다.
+
+### 변경 파일
+`view/slide.css`
+
+### 검증
+**실사용 테스트 필요**(iPad, 최우선). 이번에도 재현되면 GPU 레이어 가설 자체가 틀렸다는 뜻이므로, 다음엔 `controls`를 임시로 꺼서 native controls bar 자체가 원인인지 격리 테스트 필요.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
