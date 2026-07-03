@@ -582,6 +582,38 @@ localStorage.getItem
 ### 검증
 5가지 시나리오(정상/pages 비배열/부분 손상 Page 혼입/버전 필드 없는 구 데이터/미래 버전)를 Node로 직접 실행해 확인함 — 전부 의도대로 동작(정상 통과, null 폴백, 손상 Page만 제외 등). `index.html` 임베디드 모듈 스크립트 구문 검사도 통과. **브라우저 실사용 테스트 필요**: 저장 상태 표시가 실제로 뜨는지(정상 흐름에선 "저장됨"이 조용히 스쳐가는 정도), 기존 저장된 프로젝트(버전 필드 없는 구 데이터)가 문제없이 열리는지 확인.
 
+**실사용 검증 완료(2026-07-03)**: 저장 시 `version:1`이 localStorage에 정상 기록되는 것을 개발자도구로 직접 확인함.
+
+## 9-12. Transition / AutoAdvance 필드 뼈대 추가 (2026-07-03, 아키텍처 리뷰 5순위)
+
+### 배경
+아키텍처 리뷰에서 "Page 속성 구조가 향후 확장에 자연스러운가"를 점검한 결과, `transition`/`autoAdvance`는 콘텐츠가 아니라 "Page를 어떻게 넘기는가"에 대한 속성이라 Element 모델 없이도 지금 플랫 구조에 안전하게 얹을 수 있다는 결론(리뷰 대화 참조). 실제 동작(fade 애니메이션, 자동 전환 타이머)은 구현하지 않고 필드만 미리 넣어둔다 — "값은 있지만 아무도 안 읽는다"는 게 이번 범위의 핵심이다.
+
+### 구현
+`domain/Page.js`에 `createBehaviorDefaults({ transition, autoAdvance })` 헬퍼 추가. `createTextPage`/`createImagePage`/`createVideoPage` 세 곳 모두 파라미터로 `transition`/`autoAdvance`를 받아 이 헬퍼를 스프레드한다.
+
+```js
+transition:   { type: 'none', duration: 300 }   // 'none' | 'fade' | 'cut'
+autoAdvance:  { enabled: false, duration: 5000 } // ms
+```
+
+### 왜 이것만으로 충분한가
+- **Undo/Redo**: `HistoryManager`의 `UPDATE_PAGE` inverse가 Page 객체 전체를 스냅샷 diff하는 방식이라(9-7 검토 때 확인됨), 새 필드가 늘어나도 코드 수정 없이 자동으로 Undo/Redo 대상이 된다.
+- **Persistence**: Page를 통째로 저장하는 구조라(9-11에서 확인) 새 필드도 자동으로 저장/복원된다. `isValidPage()`도 이 필드들의 존재를 강제하지 않으므로, 이 변경 이전에 저장된 구 데이터(필드 없음)도 그대로 유효하다 — `undefined`로 남을 뿐, 렌더러가 아직 이 필드를 안 읽으니 문제없다.
+
+이렇게 Undo/Redo·Persistence 둘 다 손 안 대고 필드만 추가로 끝난 것 자체가, 아키텍처 리뷰에서 "지금 구조가 이 정도 확장엔 이미 준비되어 있다"고 판단했던 근거가 실제로 맞았다는 걸 보여준다.
+
+### 범위 밖으로 남긴 것
+- `view/PageView.js`가 `transition`을 읽어 실제로 fade/cut을 구현하는 것 — 후속 단계.
+- Page 전환을 구독해 `autoAdvance.enabled`일 때 타이머로 다음 Page로 넘기는 로직 — 후속 단계.
+- 에디터 UI에서 이 필드들을 편집하는 화면 — 후속 단계. (지금은 `createXPage()` 호출 시 파라미터로만 넣을 수 있고, 저장된 Page를 나중에 UPDATE_PAGE로 수정하는 경로는 아직 없음 — 9-7의 text 필드처럼 에디터 UI가 타입 무관하게 이 필드를 편집하게 만들려면 별도 작업 필요.)
+
+### 변경 파일
+`domain/Page.js`
+
+### 검증
+Node로 세 타입 모두 필드가 올바른 기본값/커스텀값으로 생성되는지, `isValidPage()`가 여전히 통과하는지 확인함. 실제 브라우저 동작 변화는 없음(값만 추가되고 아무것도 소비 안 하므로 회귀 리스크 낮음) — 별도 브라우저 테스트 불필요.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

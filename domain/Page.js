@@ -10,6 +10,43 @@
 import { generateId } from '../utils/id.js'
 
 // ─────────────────────────────────────────
+// Page 공통 동작(Behavior) 필드 — Transition/AutoAdvance 뼈대 (2026-07-03)
+// ─────────────────────────────────────────
+
+/**
+ * transition/autoAdvance는 "콘텐츠"가 아니라 "이 Page를 어떻게 넘기는가"에
+ * 대한 속성이라, text/image/video 타입과 무관하게 모든 Page가 동일한
+ * 모양으로 가진다 — Element 모델(DomainEntityArchitecture.md 참조) 없이도
+ * 플랫 구조에 안전하게 얹을 수 있는 필드다(아키텍처 리뷰 2026-07-03 결론).
+ *
+ * 지금은 값만 존재하고 아무것도 소비하지 않는다:
+ *   - view/PageView.js는 transition을 읽지 않는다 — Page 전환 시 항상
+ *     즉시 교체(cut)된다. type:'fade'를 넣어도 실제로 fade 되지 않는다.
+ *   - autoAdvance를 구독해 다음 Page로 자동 전환하는 타이머/로직이 없다.
+ *     enabled:true로 저장해도 아무 일도 일어나지 않는다.
+ *
+ * 이 필드들이 실제로 뭔가를 하게 만드는 건 후속 단계다. 지금 목적은
+ * "나중에 UI/렌더러가 이 필드를 읽기 시작해도 Page 스키마 자체는 안
+ * 바뀌게" 미리 자리를 잡아두는 것뿐이다 — Undo/Redo(Page 전체 스냅샷
+ * diff)와 Persistence(Page를 통째로 저장)는 새 필드가 늘어나도 이미
+ * 자동으로 대응하므로, 여기 추가하는 것만으로 그 두 곳은 손 안 대도 된다.
+ */
+function createBehaviorDefaults({ transition, autoAdvance } = {}) {
+  return {
+    // 'none' | 'fade' | 'cut' — 값만 존재, 렌더러가 아직 안 읽음
+    transition: {
+      type: transition?.type ?? 'none',
+      duration: transition?.duration ?? 300, // ms
+    },
+    // 다음 Page로 자동 전환 — 값만 존재, 아무도 구독 안 함
+    autoAdvance: {
+      enabled: autoAdvance?.enabled ?? false,
+      duration: autoAdvance?.duration ?? 5000, // ms
+    },
+  }
+}
+
+// ─────────────────────────────────────────
 // Page 생성
 // ─────────────────────────────────────────
 
@@ -30,6 +67,8 @@ export function createTextPage({
   fontWeight = 'normal',
   textStroke = 0,
   textShadow = false,
+  transition,
+  autoAdvance,
 } = {}) {
   return {
     // ── Identity ──────────────────────────
@@ -51,6 +90,9 @@ export function createTextPage({
     fontWeight,      // 'normal' | 'bold'. 시스템 폰트 굵기만 지원 (웹폰트/폰트 패밀리는 범위 밖).
     textStroke,      // 외곽선 두께(px). 0이면 없음. 색상은 검정 고정(범위 단순화, 영상 배경 대비용 표준 조합).
     textShadow,      // 그림자 on/off. 세부 오프셋/불투명도 조정 없음(범위 단순화).
+
+    // ── Behavior (2026-07-03, 뼈대만) ──────
+    ...createBehaviorDefaults({ transition, autoAdvance }),
 
     // ── Future (미구현) ────────────────────
     // backgroundMediaId: null, // 배경 미디어
@@ -75,7 +117,7 @@ export function createTextPage({
  *
  * @param {{ mediaId: string }} params
  */
-export function createImagePage({ mediaId } = {}) {
+export function createImagePage({ mediaId, transition, autoAdvance } = {}) {
   if (!mediaId || typeof mediaId !== 'string') {
     throw new Error('[Page] createImagePage: mediaId는 필수 문자열이다')
   }
@@ -87,6 +129,9 @@ export function createImagePage({ mediaId } = {}) {
 
     // ── Content ───────────────────────────
     mediaId, // IndexedDB(MediaStore)에 저장된 Media 레코드 참조
+
+    // ── Behavior (2026-07-03, 뼈대만) ──────
+    ...createBehaviorDefaults({ transition, autoAdvance }),
 
     // ── Future (미구현) ────────────────────
     // fit: 'cover',  // 'cover' | 'contain' — 표현 옵션, 후속 단계
@@ -113,7 +158,7 @@ export function createImagePage({ mediaId } = {}) {
  *
  * @param {{ mediaId: string }} params
  */
-export function createVideoPage({ mediaId } = {}) {
+export function createVideoPage({ mediaId, transition, autoAdvance } = {}) {
   if (!mediaId || typeof mediaId !== 'string') {
     throw new Error('[Page] createVideoPage: mediaId는 필수 문자열이다')
   }
@@ -125,6 +170,9 @@ export function createVideoPage({ mediaId } = {}) {
 
     // ── Content ───────────────────────────
     mediaId,
+
+    // ── Behavior (2026-07-03, 뼈대만) ──────
+    ...createBehaviorDefaults({ transition, autoAdvance }),
   }
 }
 
