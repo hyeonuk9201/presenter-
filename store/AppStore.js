@@ -29,8 +29,9 @@
  *     Subscriber가 등록되어 있는지 신경 쓰지 않는다.
  */
 
-import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt } from '../domain/Presentation.js'
+import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, sanitizePresentation } from '../domain/Presentation.js'
 import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
+import { migrateSnapshot } from '../persistence/Schema.js'
 
 // ─────────────────────────────────────────
 // localStorage 헬퍼 (읽기만 유지 — 쓰기는 PersistenceSubscriber로 이동, D-015)
@@ -41,6 +42,14 @@ import { createPresenterState, selectPage, goLive, clearLive, clearSelection, se
  * load(부트스트랩, AppStore 책임)와 save(부수효과, PersistenceSubscriber 책임)가
  * 같은 저장 위치를 봐야 하기 때문이다. AppStore는 여전히 "초기 state 생성"
  * 책임을 가지므로 load는 그대로 둔다(D-015 합의: load는 이번 단계 범위 밖).
+ *
+ * 검증/마이그레이션 추가(2026-07-03, 실사용 안정성 검토):
+ *   raw JSON을 그대로 state에 꽂던 기존 방식은 손상된 데이터가 있으면
+ *   이후 렌더링 어딘가에서 예고 없이 죽을 수 있었다(isValidPage()가
+ *   정의만 되고 어디서도 안 쓰이고 있었음). migrateSnapshot()으로 버전을
+ *   맞추고, sanitizePresentation()으로 손상된 Page를 걸러낸 뒤에만
+ *   state에 반영한다. 전체가 복구 불가능하면 null을 반환해 호출부가
+ *   새 프로젝트로 폴백한다 — 앱이 죽는 것보다 훨씬 안전하다.
  */
 export const STORAGE_KEY = 'tc-presenter-presentation'
 
@@ -48,7 +57,12 @@ function loadPresentation() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return JSON.parse(raw) // { title, pages }
+
+    const parsed = JSON.parse(raw) // { version, title, pages }
+    const migrated = migrateSnapshot(parsed)
+    if (!migrated) return null // 알 수 없는 미래 버전 — 폴백
+
+    return sanitizePresentation(migrated) // 손상된 Page 제외, 전체 손상이면 null
   } catch {
     return null
   }

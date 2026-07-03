@@ -21,6 +21,8 @@
       --accent-live:  #1db954;
       --accent-blue:  #4a9eff;
       --accent-live-dim: rgba(29,185,84,0.12);
+      --accent-danger: #ff5f56;
+      --accent-danger-dim: rgba(255,95,86,0.12);
     }
 
     html, body {
@@ -95,6 +97,31 @@
       background: var(--bg-surface);
       color: var(--text-primary);
       box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* 저장 상태 표시 (2026-07-03, 저장 안정성 개선)
+     * idle/saving/saved는 눈에 거슬리지 않게 조용히 — failed만 눈에 띄게.
+     * 저장 실패는 조용히 넘어가면 다음 주에 열었을 때 데이터가 없는
+     * 최악의 상황으로 이어질 수 있어(실사용 워크플로우: 편집→저장→
+     * 다음주 재오픈), failed 상태는 사라지지 않고 계속 보인다. */
+    #save-status {
+      font-size: 12px;
+      padding: 0 4px;
+      white-space: nowrap;
+    }
+    #save-status.save-status-idle,
+    #save-status.save-status-saving {
+      color: var(--text-muted);
+    }
+    #save-status.save-status-saved {
+      color: var(--text-muted);
+    }
+    #save-status.save-status-failed {
+      color: var(--accent-danger);
+      font-weight: 600;
+      background: var(--accent-danger-dim);
+      padding: 3px 8px;
+      border-radius: 4px;
     }
 
     /* Undo/Redo */
@@ -412,6 +439,8 @@
 
     <div class="header-spacer"></div>
 
+    <div id="save-status" class="save-status-idle"></div>
+
     <div id="history-controls">
       <button id="undo-btn" class="history-btn" title="실행 취소 (Ctrl+Z)" disabled>↶</button>
       <button id="redo-btn" class="history-btn" title="다시 실행 (Ctrl+Shift+Z)" disabled>↷</button>
@@ -526,7 +555,7 @@
   import { createTextPage, createImagePage, createVideoPage } from './domain/Page.js'
   import { getState, getSelectedPage, subscribe, registerSubscriber } from './store/AppStore.js'
   import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
-  import { PersistenceSubscriber } from './persistence/PersistenceSubscriber.js'
+  import { PersistenceSubscriber, onPersistenceStateChange } from './persistence/PersistenceSubscriber.js'
   import { HistoryHook, undo, redo, canUndo, canRedo } from './history/HistoryManager.js'
   import { importLyrics } from './utils/lyricsImport.js'
   import { generateId } from './utils/id.js'
@@ -576,6 +605,25 @@
 
   // ── Persistence 등록 (D-015, Mutation Subscriber) ──
   registerSubscriber(PersistenceSubscriber)
+
+  // ── 저장 상태 표시 (2026-07-03, 실사용 안정성 개선) ──
+  // 이전에는 저장 실패(saveStatus:'failed')가 콘솔에도 UI에도 전혀
+  // 안 보였다 — "편집 → 저장 → 다음 주 재오픈" 워크플로우에서 저장이
+  // 조용히 실패하면 다음 주엔 그냥 데이터가 없는 상황으로 이어질 수
+  // 있었다. onPersistenceStateChange는 이미 있었지만 구독자가 없었다.
+  {
+    const saveStatusEl = document.getElementById('save-status')
+    const LABELS = {
+      idle: '',
+      saving: '저장 중…',
+      saved: '저장됨',
+      failed: '⚠ 저장 실패 — 브라우저 저장 공간을 확인해주세요',
+    }
+    onPersistenceStateChange(({ saveStatus }) => {
+      saveStatusEl.textContent = LABELS[saveStatus] ?? ''
+      saveStatusEl.className = `save-status-${saveStatus}`
+    })
+  }
 
   // ── History Hook 등록 (D-018) ──
   // CommandBus가 dispatch 이후 HistoryManager.afterExecute()를 호출하도록

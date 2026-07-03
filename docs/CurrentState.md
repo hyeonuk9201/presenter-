@@ -551,6 +551,37 @@ iOS Safari에서 `<video>`는 하드웨어 디코딩 전용 GPU 합성 레이어
 
 **우선순위 조정(2026-07-03)**: 윈도우 랩탑(Chrome/Edge)에서는 텍스트 오버레이/video controls/Live-Output 동기화 전부 정상 확인됨(9-7~9-8 검증 완료) — 코드 로직 자체는 맞다는 뜻이다. iPad에서는 9-10까지 적용해도 여전히 텍스트가 안 보이는 상태로 남아있으나, **실제 운영 환경은 데스크탑/랩탑/맥북 → HDMI/RGB 직결이라 iPad가 송출 기기로 쓰일 일이 없다.** iPad는 모바일 작업 중 코드 확인용(Working Copy + a-Shell)으로만 쓰인다. 따라서 iPad 전용 렌더링 문제는 더 이상 추적하지 않는다 — 재발/재조사 요청 없으면 이 상태로 종결.
 
+## 9-11. 저장/불러오기 안정성 개선 (2026-07-03, 아키텍처 리뷰 후 결정)
+
+### 배경
+"영상 자동재생/텍스트 오버레이"보다 우선순위를 높여 진행. 실사용 워크플로우가 "편집 → 저장 → 다음 주 재오픈"인데, 아키텍처 리뷰 중 저장/불러오기 경로에 실제 위험 3가지가 확인됨.
+
+### 발견 및 수정
+
+**① 저장 실패가 완전히 조용함.** `PersistenceSubscriber.save()`는 실패 시 `saveStatus:'failed'`를 기록하지만, 이 상태를 구독하는 UI가 어디에도 없었다(`onPersistenceStateChange` 등록 지점만 있고 실제 구독자 없음). 저장이 실패해도 사용자는 전혀 알 수 없었다 — 다음 주 재오픈 시 데이터가 없는 최악의 시나리오로 이어질 수 있었다.
+→ `index.html` 헤더에 `#save-status` 표시 추가. `saving`/`saved`는 조용히, `failed`만 눈에 띄게(빨간 배경, 사라지지 않음). `console.error`도 추가(이전엔 콘솔에도 안 남았음).
+
+**② `isValidPage()`가 정의만 되고 어디서도 호출되지 않음.** `loadPresentation()`이 localStorage의 raw JSON을 검증 없이 그대로 state에 반영 — `pages`가 배열이 아니거나 개별 Page가 손상되어 있으면 이후 렌더링 어딘가에서 예고 없이 죽을 수 있었다.
+→ `domain/Presentation.js`에 `sanitizePresentation()` 추가. 정책: "부분 손상은 복구, 전체 손상만 폐기" — `pages` 자체가 배열이 아니면 전체를 폐기(새 프로젝트로 폴백), 개별 Page가 손상되어 있으면 그 Page만 제외하고 나머지는 살린다.
+
+**③ 스키마 버전이 없음.** 저장 형식이 `{ title, pages }`뿐이라 "이 데이터가 어느 시절 구조인지" 구분할 방법이 없었다. Page 필드가 계속 늘어날 예정(transition/autoAdvance 등, 5순위)이라 지금(필드가 적을 때) 버전을 넣는 게 가장 싸다.
+→ `persistence/Schema.js` 신설. `CURRENT_SCHEMA_VERSION = 1`, `withSchemaVersion()`(저장 시 버전 부착), `migrateSnapshot()`(로드 시 버전 확인 — 지금은 v1→v1 통과뿐이지만 향후 v1→v2 마이그레이션을 끼워 넣을 자리를 미리 마련). `version` 필드가 없는 기존 실사용 데이터는 v1으로 간주해 그대로 호환.
+
+### 흐름 정리
+```
+localStorage.getItem
+  → JSON.parse
+  → migrateSnapshot()   (버전 확인/변환, 미래 버전이면 null)
+  → sanitizePresentation() (손상된 Page 제외, 전체 손상이면 null)
+  → null이면 AppStore가 새 프로젝트로 폴백
+```
+
+### 변경 파일
+`persistence/Schema.js`(신규), `domain/Presentation.js`, `store/AppStore.js`, `persistence/PersistenceSubscriber.js`, `index.html`
+
+### 검증
+5가지 시나리오(정상/pages 비배열/부분 손상 Page 혼입/버전 필드 없는 구 데이터/미래 버전)를 Node로 직접 실행해 확인함 — 전부 의도대로 동작(정상 통과, null 폴백, 손상 Page만 제외 등). `index.html` 임베디드 모듈 스크립트 구문 검사도 통과. **브라우저 실사용 테스트 필요**: 저장 상태 표시가 실제로 뜨는지(정상 흐름에선 "저장됨"이 조용히 스쳐가는 정도), 기존 저장된 프로젝트(버전 필드 없는 구 데이터)가 문제없이 열리는지 확인.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

@@ -35,6 +35,7 @@
  */
 
 import { STORAGE_KEY } from '../store/AppStore.js'
+import { withSchemaVersion } from './Schema.js'
 
 // ─────────────────────────────────────────
 // PersistenceState (로컬 상태 — AppStore에 두지 않음, D-015)
@@ -55,7 +56,9 @@ let persistenceState = {
 /**
  * PersistenceState 변경을 외부에 알리는 콜백 목록.
  * CommandBus/AppStore 경로를 거치지 않는 별도 알림 채널이다 (D-015).
- * 현재 어떤 UI도 구독하지 않는다 — 등록 지점만 마련한다.
+ * index.html의 저장 상태 표시(2026-07-03)가 이 채널을 구독한다 —
+ * 이전에는 등록 지점만 있고 실제 구독자가 없어서, 저장 실패가 발생해도
+ * 사용자에게 전혀 보이지 않았다.
  */
 const persistenceStateListeners = []
 
@@ -86,19 +89,23 @@ function save(presentation) {
   setPersistenceState({ saveStatus: 'saving' })
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(withSchemaVersion({
       title: presentation.title,
       pages: presentation.pages,
-    }))
+    })))
     setPersistenceState({
       isDirty: false,
       lastSavedAt: new Date().toISOString(),
       saveStatus: 'saved',
     })
-  } catch {
-    // 저장 실패 시 무시한다 (용량 초과 등).
-    // Store state와 UI 동작에는 어떤 영향도 주지 않는다 — dispatch()를
-    // 다시 호출하지 않고, 여기서 조용히 끝낸다.
+  } catch (err) {
+    // 저장 실패(용량 초과 등). Store state와 UI 동작에는 영향을 주지
+    // 않는다 — dispatch()를 다시 호출하지 않고 여기서 조용히 끝낸다.
+    // 다만 saveStatus:'failed'는 onPersistenceStateChange 구독자(2026-07-03
+    // 부터 index.html의 저장 상태 표시가 구독함)에게 전달되어 사용자에게
+    // 보여진다 — 이전에는 콘솔에도 안 남고 UI에도 안 보여서 완전히
+    // 조용히 사라졌었다.
+    console.error('[PersistenceSubscriber] 저장 실패:', err)
     setPersistenceState({ saveStatus: 'failed' })
   }
 }

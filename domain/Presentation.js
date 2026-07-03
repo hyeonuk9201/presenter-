@@ -9,6 +9,7 @@
  */
 
 import { generateId } from '../utils/id.js'
+import { isValidPage } from './Page.js'
 
 // ─────────────────────────────────────────
 // Presentation 생성
@@ -20,6 +21,46 @@ export function createPresentation({ title = '제목 없음' } = {}) {
     title,
     pages: [], // Page[] - MVP: 소유 구조
                 // Future: pageIds[] - Library 구조로 전환 가능
+  }
+}
+
+// ─────────────────────────────────────────
+// 저장된 데이터 검증 (실사용 버그 대응, 2026-07-03)
+// ─────────────────────────────────────────
+
+/**
+ * localStorage에서 복원한 원본 객체를 검증하고 안전한 Presentation으로
+ * 정리한다. isValidPage()는 Step6부터 정의만 되어있고 실제로 어디서도
+ * 호출되지 않았다 — load 경로에 검증이 전혀 없어, 손상된 데이터가 섞여
+ * 있으면 이후 렌더링 어딘가에서 예고 없이 죽을 수 있었다(예: pages가
+ * 배열이 아니면 presentation.pages.find(...)에서 TypeError).
+ *
+ * 정책: "부분 손상"은 복구하고, "전체 손상"만 폐기한다.
+ *   - raw 자체가 object가 아니거나 pages가 배열이 아니면 복구 불가 → null
+ *     (호출부가 새 프로젝트로 폴백한다)
+ *   - pages 배열 안에 개별적으로 손상된 Page가 섞여 있으면, 그 항목만
+ *     제거하고 나머지는 그대로 살린다 — Page 하나 깨졌다고 전체 행사
+ *     데이터를 날리지 않는다.
+ *
+ * @param {unknown} raw
+ * @returns {{ id: string, title: string, pages: object[] } | null}
+ */
+export function sanitizePresentation(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  if (!Array.isArray(raw.pages)) return null
+
+  const validPages = raw.pages.filter(page => {
+    const ok = isValidPage(page)
+    if (!ok) {
+      console.warn('[Presentation] 손상된 Page를 제외하고 복원함:', page)
+    }
+    return ok
+  })
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : generateId(),
+    title: typeof raw.title === 'string' ? raw.title : '제목 없음',
+    pages: validPages,
   }
 }
 
