@@ -148,3 +148,83 @@
   background: #c0392b;
   color: #fff;
 }
+
+/* ── Section (2026-07-03, 9-13 도메인 모델 위에 UI 추가) ──────
+ * GPT의 "Section Tree" 설계 원칙: Section Header가 최상위 계층이고,
+ * Page는 항상 그 아래 속한 항목으로 표시된다. */
+
+.cue-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cue-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cue-section-header:hover {
+  background: #262626;
+}
+
+.cue-section-toggle {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  color: #888;
+  transition: transform 0.1s;
+}
+
+.cue-section.is-collapsed .cue-section-toggle {
+  transform: rotate(-90deg);
+}
+
+.cue-section-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #555; /* color 없을 때 기본값 */
+}
+
+.cue-section-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cue-section-count {
+  color: #666;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.cue-section-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 6px; /* Page가 Section 아래 항목임을 들여쓰기로 표현 */
+}
+
+.cue-section.is-collapsed .cue-section-pages {
+  display: none;
+}
+
+/* 첫 Section 이전(미분류) Page — 헤더 없이 그냥 나열 */
+.cue-unsectioned {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

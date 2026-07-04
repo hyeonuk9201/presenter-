@@ -11,7 +11,7 @@
  * 아니라 state.presenterState.appMode 기반으로 동작한다.
  */
 
-import { subscribe, getState } from '../store/AppStore.js'
+import { subscribe, getState, getSectionRanges } from '../store/AppStore.js'
 import { execute } from '../command/CommandBus.js'
 
 export function createCueList(containerEl) {
@@ -22,14 +22,23 @@ export function createCueList(containerEl) {
 
   // ── 렌더링 ───────────────────────────────
   function render(state) {
-    const { pages } = state.presentation
+    const { pages, sections } = state.presentation
     const { selectedPageId, livePageId } = state.presenterState
 
     // Step6(2026-06-27): text뿐 아니라 mediaId까지 fingerprint에 포함한다.
     // 기존에는 `${p.id}:${p.text}`만 봤는데, image/video Page는 text가
     // 항상 undefined라 mediaId가 바뀌어도(미디어 교체) 변경 감지가 안 될
     // 수 있었다 — type과 mediaId를 추가해 그 경우도 감지하게 한다.
-    const currentFingerprint = pages.map(p => `${p.id}:${p.type}:${p.text}:${p.mediaId}`).join('|')
+    //
+    // 9-13(2026-07-03): sections도 fingerprint에 포함한다 — Section
+    // 추가/삭제/제목/색상/접기 상태가 바뀌면 구조 자체(Section Tree)가
+    // 달라지므로 다시 그려야 한다. pages 변경 감지 로직과 별개 관심사라
+    // 이름은 pagesChanged로 유지하되 실제로는 "다시 그려야 하는가"를 뜻한다.
+    const pagesFingerprint = pages.map(p => `${p.id}:${p.type}:${p.text}:${p.mediaId}`).join('|')
+    const sectionsFingerprint = sections
+      .map(s => `${s.id}:${s.title}:${s.collapsed}:${s.color}:${s.startPageId}`)
+      .join('|')
+    const currentFingerprint = `${pagesFingerprint}::${sectionsFingerprint}`
     const pagesChanged = currentFingerprint !== lastFingerprint
 
     if (pagesChanged) {
@@ -41,9 +50,7 @@ export function createCueList(containerEl) {
         return
       }
 
-      pages.forEach((page, index) => {
-        containerEl.appendChild(createCueItem(page, index))
-      })
+      renderTree(state)
     }
 
     containerEl.querySelectorAll('.cue-item').forEach(el => {
@@ -51,6 +58,99 @@ export function createCueList(containerEl) {
       el.classList.toggle('is-selected', id === selectedPageId)
       el.classList.toggle('is-live',     id === livePageId)
     })
+  }
+
+  /**
+   * Section Tree 렌더링(9-13 도메인 모델 위에 UI 추가, GPT 설계 원칙 반영).
+   * "CueList는 Page List가 아니라 Section Tree를 지향한다" — Section이
+   * 없으면(sections:[] — 대부분의 기존 프로젝트) 그냥 flat하게, Page
+   * 번호는 항상 전체 순서 기준 전역 번호를 쓴다(Section별로 1번부터
+   * 다시 세지 않는다 — Page는 여전히 송출 가능한 최소 단위이므로).
+   */
+  function renderTree(state) {
+    const { pages } = state.presentation
+    const ranges = getSectionRanges()
+    let globalIndex = 0
+
+    if (ranges.length === 0) {
+      pages.forEach(page => {
+        containerEl.appendChild(createCueItem(page, globalIndex++))
+      })
+      return
+    }
+
+    // 첫 Section 시작 이전(미분류) Page — 헤더 없이 그냥 나열
+    const firstStartIndex = pages.findIndex(p => p.id === ranges[0].startPageId)
+    if (firstStartIndex > 0) {
+      const unsectioned = document.createElement('div')
+      unsectioned.className = 'cue-unsectioned'
+      for (let i = 0; i < firstStartIndex; i++) {
+        unsectioned.appendChild(createCueItem(pages[i], globalIndex++))
+      }
+      containerEl.appendChild(unsectioned)
+    }
+
+    ranges.forEach(range => {
+      containerEl.appendChild(createSectionGroup(range, globalIndex))
+      globalIndex += range.pages.length
+    })
+  }
+
+  // ── Section 그룹 DOM 생성 ────────────────
+  function createSectionGroup(range, startGlobalIndex) {
+    // range는 getSectionRanges()가 만든 { ...section, pages: [...] } 형태.
+    // pages는 이 함수 렌더링에만 쓰는 계산된 값이라, Section 자체를
+    // UPDATE_SECTION으로 되돌려보낼 때는 반드시 떼어내야 한다 — 안 그러면
+    // Section 도메인 객체에 스냅샷이 섞여 저장된다.
+    const { pages: sectionPages, ...section } = range
+
+    const group = document.createElement('div')
+    group.className = 'cue-section'
+    group.classList.toggle('is-collapsed', !!section.collapsed)
+    group.dataset.sectionId = section.id
+
+    const header = document.createElement('div')
+    header.className = 'cue-section-header'
+
+    const toggle = document.createElement('span')
+    toggle.className = 'cue-section-toggle'
+    toggle.textContent = '▾'
+
+    const colorDot = document.createElement('span')
+    colorDot.className = 'cue-section-color-dot'
+    if (section.color) colorDot.style.background = section.color
+
+    const title = document.createElement('span')
+    title.className = 'cue-section-title'
+    title.textContent = section.title
+
+    const count = document.createElement('span')
+    count.className = 'cue-section-count'
+    count.textContent = sectionPages.length
+
+    header.appendChild(toggle)
+    header.appendChild(colorDot)
+    header.appendChild(title)
+    header.appendChild(count)
+
+    // 표시와 액션 전달만 담당 — 실제 상태 변경은 Store(UPDATE_SECTION)를
+    // 통해서만 이루어진다. UI가 직접 collapsed를 뒤집어서 그리지 않는다.
+    header.addEventListener('click', () => {
+      execute({
+        type: 'UPDATE_SECTION',
+        payload: { section: { ...section, collapsed: !section.collapsed } },
+      })
+    })
+
+    const pagesEl = document.createElement('div')
+    pagesEl.className = 'cue-section-pages'
+    sectionPages.forEach((page, i) => {
+      pagesEl.appendChild(createCueItem(page, startGlobalIndex + i))
+    })
+
+    group.appendChild(header)
+    group.appendChild(pagesEl)
+    return group
   }
 
   // ── CueItem DOM 생성 ─────────────────────

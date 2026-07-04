@@ -651,6 +651,35 @@ Node로 전체 파이프라인 실통합 테스트 완료:
 
 **브라우저 실사용 테스트는 이번 범위에서 의미 없음** — 화면에 아무것도 안 보인다(UI 없음). CueList Outline UI가 붙는 다음 단계에서 브라우저 테스트 필요.
 
+## 9-14. Section Tree UI 구현 (2026-07-03, GPT 설계 원칙 반영)
+
+### 배경
+9-13에서 만든 Section 도메인 모델 위에 실제 CueList 화면을 붙였다. GPT가 작성한 "Section UI Design Principle" 문서를 검토 후 그대로 채택 — 핵심 원칙: "CueList는 Page List가 아니라 Section Tree를 지향한다. Section Header가 최상위 계층이고 Page는 항상 그 아래 속한 항목으로 표시된다. UI는 표시와 액션 전달만 담당하고, 데이터 변경은 Store/Domain을 통해서만 이루어진다." 기존 아키텍처 원칙(View는 순수 표시, dispatch는 Store를 통해서만)과 그대로 일치해 수정 없이 채택.
+
+### 구현
+
+**`ui/CueList.js`**:
+- `render()`가 `getSectionRanges()`(9-13에서 만든 AppStore 편의 함수)를 사용해 Section이 있으면 Section Tree로, 없으면(대부분의 기존 프로젝트, `sections:[]`) 기존과 동일하게 flat하게 그린다 — 하위 호환.
+- 첫 Section 시작 이전의 "미분류" Page는 헤더 없이 그냥 나열.
+- Page 번호는 Section별로 리셋하지 않고 전체 순서 기준 전역 번호 유지 — Page가 여전히 송출 가능한 최소 단위라는 원칙(FutureEditor.md) 반영.
+- Section Header 클릭 → `execute({ type: 'UPDATE_SECTION', ... })`으로 `collapsed` 토글. UI가 직접 상태를 뒤집어 그리지 않고 Store를 거친다.
+- fingerprint 재렌더링 판단 로직에 `sections`(title/collapsed/color/startPageId) 포함 — 이전엔 `pages`만 봤어서 Section 변경만으로는 다시 안 그려졌을 것.
+
+**`ui/cuelist.css`**: `.cue-section`/`.cue-section-header`/`.cue-section-pages` 등 추가. 기존 다크 테마 톤 유지, Page보다 한 단계 들여쓰기로 계층 표현.
+
+**`index.html`**: CueList 패널 헤더에 "+ 섹션" 버튼 추가(최소 구현) — 선택된 Page를 시작점으로 `prompt()`로 제목만 받아 `ADD_SECTION` 실행. 이미 다른 Section의 시작점인 Page를 다시 선택하면 안내 후 중단.
+
+### 범위 밖으로 남긴 것
+- Section 삭제 UI — 도메인 함수(`removeSection`)는 있지만 화면에 버튼 없음.
+- Section 색상/메모 편집 UI — `prompt()`로 제목만 받음.
+- Page를 드래그해서 다른 Section으로 옮기는 조작 — 9-13에서 이미 "위치가 곧 소속"이라 도메인 로직은 준비돼 있지만(움직이면 자동 반영), 드래그 자체를 트리거하는 UI(드래그 핸들, 순서 변경 UI)가 이 프로젝트에 아직 없음(`movePage`를 호출하는 UI 자체가 없음 — Section 이전 문제가 아니라 기존부터 없던 기능).
+
+### 변경 파일
+`ui/CueList.js`, `ui/cuelist.css`, `index.html`
+
+### 검증
+`node --check`으로 `CueList.js`와 `index.html` 임베디드 모듈 스크립트 구문 검사 통과. **브라우저 실사용 테스트 필요**: Page 선택 → "+ 섹션" → 제목 입력 → Section Header가 CueList에 나타나는지, 클릭으로 접기/펼치기 되는지, 새로고침 후에도 collapsed 상태가 유지되는지(D-Editor-2), Section이 없는 기존 프로젝트가 여전히 flat하게 잘 보이는지(하위 호환).
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

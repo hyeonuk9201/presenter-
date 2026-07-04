@@ -217,6 +217,25 @@
       text-transform: uppercase;
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #add-section-btn {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: normal;
+      text-transform: none;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-radius: 4px;
+      padding: 3px 8px;
+      cursor: pointer;
+    }
+    #add-section-btn:hover {
+      background: var(--bg-raised);
+      color: var(--text-primary);
     }
 
     #cue-list-el {
@@ -465,7 +484,10 @@
 
       <!-- CueList -->
       <div id="cuelist-panel">
-        <div class="panel-header">순서</div>
+        <div class="panel-header">
+          <span>순서</span>
+          <button id="add-section-btn" title="선택된 Page부터 새 Section 시작">+ 섹션</button>
+        </div>
         <div class="cue-list" id="cue-list-el"></div>
       </div>
 
@@ -553,6 +575,7 @@
 
 <script type="module">
   import { createTextPage, createImagePage, createVideoPage } from './domain/Page.js'
+  import { createSection } from './domain/Section.js'
   import { getState, getSelectedPage, subscribe, registerSubscriber } from './store/AppStore.js'
   import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
   import { PersistenceSubscriber, onPersistenceStateChange } from './persistence/PersistenceSubscriber.js'
@@ -740,6 +763,31 @@
     } else {
       outputWindow.focus()
     }
+  })
+
+  // ── Section 추가 (9-13 도메인 모델 위에 최소 UI, 2026-07-03) ──
+  // "메뉴만 만들어놔도 좋다"는 스코프에 맞춰 prompt()로 제목만 받는
+  // 최소 구현. 색상/메모 편집 UI는 범위 밖(TODO.md에 등록).
+  document.getElementById('add-section-btn').addEventListener('click', () => {
+    const page = getSelectedPage()
+    if (!page) {
+      alert('먼저 CueList에서 Section을 시작할 Page를 선택하세요.')
+      return
+    }
+
+    const alreadyStart = getState().presentation.sections.some(s => s.startPageId === page.id)
+    if (alreadyStart) {
+      alert('이 Page는 이미 다른 Section의 시작점입니다.')
+      return
+    }
+
+    const title = prompt('Section 제목', '섹션')
+    if (title === null) return // 취소
+
+    execute({
+      type: 'ADD_SECTION',
+      payload: { section: createSection({ title: title || '섹션', startPageId: page.id }) },
+    })
   })
 
   // ── Editor: 가사 추가 ────────────────────
