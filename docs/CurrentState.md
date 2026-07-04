@@ -680,6 +680,41 @@ Node로 전체 파이프라인 실통합 테스트 완료:
 ### 검증
 `node --check`으로 `CueList.js`와 `index.html` 임베디드 모듈 스크립트 구문 검사 통과. **브라우저 실사용 테스트 필요**: Page 선택 → "+ 섹션" → 제목 입력 → Section Header가 CueList에 나타나는지, 클릭으로 접기/펼치기 되는지, 새로고침 후에도 collapsed 상태가 유지되는지(D-Editor-2), Section이 없는 기존 프로젝트가 여전히 flat하게 잘 보이는지(하위 호환).
 
+## 9-15. Section Tree UI 테스트 피드백 대응 (2026-07-04)
+
+### 배경
+9-14에서 구현한 Section Tree UI에 대해 QA 피드백 3건 접수:
+1. Section Header에 제목 외 숫자가 붙어 나오는 것이 의도한 동작인지 문의
+2. 접기 기능으로 보이는 역삼각형 화살표가 작동하지 않는다는 보고
+3. Section에 포함된 Page와 포함 안 된(미분류) Page의 정렬 순위(번호)가 같아 구분이 안 된다는 보고
+
+### 조사
+2번(화살표 미작동)은 Node + jsdom으로 실제 클릭 이벤트를 재현하는 자동화 테스트를 작성해 검증했다 — `dispatch`/`execute`/DOM 재생성까지 전체 파이프라인을 실행한 결과, `collapsed` 상태 변경과 `is-collapsed` 클래스 적용, `cue-section-pages`의 숨김까지 로직 자체는 정상 동작했다(회귀 없음 확인, 아래 검증 참조). 원인은 버그가 아니라 신호 부족으로 판단: 클릭할 때마다 `containerEl.innerHTML = ''`로 하위 트리 전체를 재생성하는 구조라 `transform: rotate(-90deg)` transition이 "이전 상태 → 다음 상태"로 애니메이션되지 않고 최종 상태로 곧바로 나타난다. 작은 회색 유니코드 화살표가 순간적으로 살짝 회전만 하다 보니 클릭 반응이 없는 것처럼 보였을 가능성이 높다.
+
+### 조치
+**`ui/CueList.js`**:
+- Section 토글 아이콘을 회전(rotate) 대신 글리프 자체 교체(▼ 펼침 / ▶ 접힘)로 변경 — 상태 변화가 명확하게 드러난다.
+- Section Header의 카운트 숫자에 괄호를 추가(`(3)`)하고 `title` 속성으로 툴팁("이 섹션에 포함된 Page 수")을 붙였다 — 1번 피드백은 의도된 기능(Section 내 Page 개수 표시)이었으나 표기가 불명확했다.
+- 첫 Section 시작 이전(미분류) Page 블록에 "미분류" 라벨을 추가했다 — 접히지 않는 non-collapsible 라벨로, Section Header와 톤은 맞추되 hover 등 클릭 가능성을 암시하는 스타일은 넣지 않았다.
+
+**`ui/cuelist.css`**: `.cue-section-toggle`의 `transform: rotate(-90deg)` 규칙 제거(글리프 교체 방식으로 대체되어 불필요), `.cue-unsectioned-label` 스타일 추가.
+
+### 범위 밖으로 남긴 것
+- Page 번호 자체를 Section별로 구분 표기하는 것(예: 미분류 Page는 다른 스타일의 번호)은 하지 않았다 — Page가 여전히 송출 가능한 최소 단위로서 전역 순번을 유지해야 한다는 기존 원칙(9-14, FutureEditor.md)과 배치되므로, 라벨 추가로 해결했다.
+
+### 변경 파일
+`ui/CueList.js`, `ui/cuelist.css`
+
+### 검증
+Node + jsdom으로 실제 DOM 클릭 이벤트를 시뮬레이션하는 통합 테스트 작성 및 통과:
+- Section Header 클릭 시 `state.presentation.sections[0].collapsed` 토글, `is-collapsed` 클래스 적용, 재클릭 시 정상 복귀 확인(회귀 없음)
+- 미분류 Page가 있는 케이스에서 `.cue-unsectioned-label` 렌더링 확인
+- 펼침/접힘 상태에 따라 토글 글리프가 `▼`/`▶`로 정확히 바뀌는지 확인
+- Section 카운트가 `(N)` 형식과 title 속성으로 표시되는지 확인
+- `node --check`으로 `CueList.js` 구문 검사 통과
+
+**브라우저 실사용 재확인 권장**: 이번 수정은 자동화 테스트로 로직/DOM 결과를 검증했지만, 실제 브라우저에서 화살표 클릭 반응이 이제 명확하게 체감되는지, 그리고 이전 세션(9-14)처럼 브라우저 캐시로 인해 이전 JS/CSS가 남아있지 않은지(하드 리프레시 필요) 확인이 필요하다.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
