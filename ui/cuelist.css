@@ -183,12 +183,11 @@
   flex-shrink: 0;
   text-align: center;
   color: #888;
-  transition: transform 0.1s;
 }
-
-.cue-section.is-collapsed .cue-section-toggle {
-  transform: rotate(-90deg);
-}
+/* 2026-07-04 QA 피드백 대응: rotate(-90deg) 방식은 클릭할 때마다 DOM이
+   통째로 재생성되어 애니메이션이 보이지 않고, 결과 상태도 회전값 차이만
+   있어 신호가 약했다. 글리프 자체를 ▼/▶로 바꾸는 방식(CueList.js)으로
+   대체 — 여기서는 별도 트랜스폼이 필요 없다. */
 
 .cue-section-color-dot {
   width: 8px;
@@ -222,7 +221,21 @@
   display: none;
 }
 
-/* 첫 Section 이전(미분류) Page — 헤더 없이 그냥 나열 */
+/* 첫 Section 이전(미분류) Page.
+ * 2026-07-04 QA 피드백 대응: Section 소속 Page(헤더+들여쓰기)와 구분이
+ * 안 된다는 지적을 받아, 접을 수는 없지만 시각적으로 구분되는 라벨을
+ * 추가했다 — Section Header와 톤은 맞추되(같은 크기/색 계열),
+ * 클릭 가능한 배경색 hover 등은 넣지 않아 "이건 Section이 아니다"를
+ * 암묵적으로도 전달한다. */
+.cue-unsectioned-label {
+  padding: 6px 8px;
+  color: #666;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .cue-unsectioned {
   display: flex;
   flex-direction: column;
