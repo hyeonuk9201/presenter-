@@ -79,14 +79,26 @@ export function createCueList(containerEl) {
       return
     }
 
-    // 첫 Section 시작 이전(미분류) Page — 헤더 없이 그냥 나열
+    // 첫 Section 시작 이전(미분류) Page.
+    // QA 피드백(2026-07-04): "Section에 포함 안된 Page와 포함된 Page의
+    // 정렬 순위가 같아서 구분이 안 된다" — 원래는 헤더 없이 그냥
+    // 나열하도록 의도했지만(Section Tree UI 설계 당시 최소 구현), Page
+    // 번호가 전역 연속 번호를 쓰다 보니 소속 여부를 구분할 시각적 단서가
+    // 전혀 없었다. Section Header와 대비되는 non-collapsible 라벨을
+    // 추가해 "이 구간은 어느 Section에도 속하지 않는다"를 명시한다 —
+    // 접기 기능은 없다(접을 대상이 되는 Section 자체가 아니므로).
     const firstStartIndex = pages.findIndex(p => p.id === ranges[0].startPageId)
     if (firstStartIndex > 0) {
+      const unsectionedLabel = document.createElement('div')
+      unsectionedLabel.className = 'cue-unsectioned-label'
+      unsectionedLabel.textContent = '미분류'
+
       const unsectioned = document.createElement('div')
       unsectioned.className = 'cue-unsectioned'
       for (let i = 0; i < firstStartIndex; i++) {
         unsectioned.appendChild(createCueItem(pages[i], globalIndex++))
       }
+      containerEl.appendChild(unsectionedLabel)
       containerEl.appendChild(unsectioned)
     }
 
@@ -112,9 +124,19 @@ export function createCueList(containerEl) {
     const header = document.createElement('div')
     header.className = 'cue-section-header'
 
+    // QA 피드백(2026-07-04) 대응: 기존에는 '▾' 고정 글리프 + CSS
+    // rotate(-90deg)로만 collapsed 상태를 표현했다. 그런데 Section
+    // Header 클릭 시 컨테이너 전체를 다시 그리는 구조(render() 상단의
+    // containerEl.innerHTML = '')라, 매번 새 DOM 노드가 생성되면서
+    // transition이 "이전 상태 → 다음 상태"로 애니메이션되지 않고 최종
+    // 상태로 곧바로 나타난다. 결과물 자체는 맞지만(펼침↔접힘 모두 동작),
+    // 작은 회색 아이콘이 순간적으로 살짝 회전만 하다 보니 클릭해도 반응이
+    // 없는 것처럼 보인다는 피드백을 받았다 — 실제로는 동작하지만 신호가
+    // 너무 약했던 것. 회전 대신 글리프 자체를 바꿔(▼ 펼침 / ▶ 접힘)
+    // 상태 변화를 명확하게 한다.
     const toggle = document.createElement('span')
     toggle.className = 'cue-section-toggle'
-    toggle.textContent = '▾'
+    toggle.textContent = section.collapsed ? '▶' : '▼'
 
     const colorDot = document.createElement('span')
     colorDot.className = 'cue-section-color-dot'
@@ -124,9 +146,13 @@ export function createCueList(containerEl) {
     title.className = 'cue-section-title'
     title.textContent = section.title
 
+    // QA 피드백(2026-07-04): "제목 외에 숫자가 나오는 게 의도된 건지"
+    // 문의 — 의도된 기능(이 Section에 포함된 Page 개수)이지만 괄호 없이
+    // 숫자만 있어 용도가 불분명했다. 괄호와 title(툴팁)을 추가해 명확히 한다.
     const count = document.createElement('span')
     count.className = 'cue-section-count'
-    count.textContent = sectionPages.length
+    count.textContent = `(${sectionPages.length})`
+    count.title = '이 섹션에 포함된 Page 수'
 
     header.appendChild(toggle)
     header.appendChild(colorDot)
