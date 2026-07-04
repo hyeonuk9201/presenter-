@@ -100,25 +100,35 @@ Outline은 Page를 다음 형태로 표시할 수 있다.
 
 ---
 
-# Review Notes (Claude)
+# Decisions (2026-07-03)
 
-> 아래는 원본 브레인스토밍 내용이 아니라, 검토 중 든 생각을 별도로 덧붙인 것이다.
-> 결정된 사항이 아니라 실제 구현 시 확인이 필요한 지점들이다.
+> 아래 3가지는 Review Notes(검토 의견)에서 시작해, 구현 착수 전에 결정으로 확정한 것이다.
 
-## Section 소속 방식이 아직 정해지지 않음
+## D-Editor-1. Section 소속 방식: 순서 기반 구간
 
-"Section은 Editor 개념, Domain에 영향 없음" 원칙(FutureDomain.md의 "Layer/zIndex/Layout은 Domain에 포함하지 않는다"와 같은 결) 자체는 기존 아키텍처와 잘 맞는다. 다만 "어떤 Page가 어떤 Section에 속하는가"를 어떻게 표현할지는 이 문서에 없다. 크게 두 방향이 있다.
+Page.sectionId 같은 역참조 대신, `Presentation`에 별도 `sections` 배열을 둔다. 각 Section은 시작 Page의 id를 경계 마커로 가진다.
 
-- **Page 순서 기반 구간(range)**: Section을 "N번째 Page부터 M번째 Page까지"로 표현. `Page.elementIds` 순서가 z-order인 것처럼, `Presentation.pages` 배열 순서 + 별도 경계 마커 배열(예: `sectionBoundaries: [{ pageId, title, collapsed, color }]`)로 표현하는 방식. Domain(Page)에 필드를 안 넣는다는 원칙과 가장 잘 맞는다.
-- **역참조(Page.sectionId)**: Page가 자신이 속한 Section을 직접 참조. 구현은 더 단순하지만, DomainEntityArchitecture.md의 "Element 역참조 금지" 원칙과 결이 다르다 — Section도 같은 이유로 역참조를 피하는 게 일관적일 것 같다.
+```js
+sections: [
+  { id, title, note, collapsed, color, startPageId },
+  ...
+]
+```
 
-전자(순서 기반 구간)가 기존 결정들과 더 일관되어 보인다는 게 개인적인 의견이다.
+"이 Page가 어느 Section에 속하는가"는 `pages` 배열 순서 위에서 계산한다 — `sections`를 `startPageId`가 `pages` 배열에서 나타나는 순서대로 정렬한 뒤, 각 구간을 "이 Section의 시작부터 다음 Section 시작 전까지"로 해석한다. 별도의 "끝 지점" 필드는 두지 않는다(중복 정보는 불일치 위험을 만든다).
 
-## Section 상태(collapsed 등)의 영속 여부
+Page.sectionId 역참조를 피한 이유는 DomainEntityArchitecture.md의 Element 역참조 금지 원칙과 결을 맞추기 위함이다. 또한 이 방식은 domain/Page.js를 전혀 건드리지 않는다 — 9-11에서 만든 로드 검증/마이그레이션 로직에 영향이 없다.
 
-Section이 `collapsed`/`color`/`note` 같은 상태를 가질 수 있다고 되어 있는데, 이게 새로고침 후에도 유지되어야 하는지(영속) 아니면 세션 동안만 유지되는 Editor 휘발성 상태인지가 불명확하다. 영속이 필요하다면 `PersistenceSubscriber`가 구독하는 Mutation 목록(현재 `SET_PAGES`/`SET_TITLE`/`SET_SELECTION`/`SET_LIVE_PAGE`)에 새 항목이 추가되어야 한다 — 실제 구현 시 놓치기 쉬운 지점이라 미리 남겨둔다.
+## D-Editor-2. Section 상태는 영속한다
 
-## Page 삭제/재정렬 시 Section 경계 무결성
+`collapsed`/`color`/`note`/`title`은 새로고침 후에도 유지되어야 한다 — 운영자가 콘티를 접어둔 채로 준비하다 새로고침되면 다시 다 펼쳐지는 건 나쁜 UX다.
 
-Section이 Page 배열의 위치에 종속된 구조를 택한다면, Page 삭제나 순서 변경(드래그 재정렬) 시 Section 경계가 깨지지 않도록 하는 로직이 필요하다. 지금 범위 밖이지만, 위 "Page 순서 기반 구간" 방식을 택할 경우 이 부분이 실제 구현 난이도의 대부분을 차지할 가능성이 높다.
+`PersistenceSubscriber`가 구독하는 Mutation 목록에 `SET_SECTIONS`를 추가한다(기존 `SET_PAGES`/`SET_TITLE`/`SET_SELECTION`/`SET_LIVE_PAGE`와 동렬). 저장 스냅샷에도 `sections` 필드가 추가된다 — Schema.js의 `CURRENT_SCHEMA_VERSION`을 올릴 이유는 아니다(필드 추가는 breaking change가 아니고, 버전 필드 없는 구 데이터도 `sections: []`로 안전하게 기본값 처리 가능).
+
+## D-Editor-3. Page 이동 시 Section 소속은 위치가 결정한다(자동 편입)
+
+D-Editor-1(순서 기반 구간)의 자연스러운 귀결이다. Page를 드래그해서 다른 Section의 범위 안으로 옮기면, 별도 재배정 로직 없이 자동으로 그 Section에 속하게 된다 — "소속"이라는 별도 상태가 없고 위치가 곧 소속이기 때문이다.
+
+Page 삭제 시에도 별도 처리가 필요 없다 — `sections`는 `pages` 배열을 참조만 할 뿐 소유하지 않으므로, `pages`에서 Page가 사라지면 그 계산 결과에서도 자동으로 빠진다. 다만 한 가지 엣지 케이스는 처리가 필요하다: Section의 `startPageId`가 가리키던 Page 자체가 삭제되는 경우 — 이때는 그 Section의 시작점을 "삭제된 Page 다음으로 남은 Page"로 자동 재조정하거나(Section이 비지 않는 한), Section에 속한 Page가 하나도 안 남으면 Section 자체를 제거한다.
+
 
