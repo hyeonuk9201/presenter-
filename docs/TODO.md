@@ -5,7 +5,7 @@
 > 완료된 항목은 체크만 하고 CurrentState.md의 해당 세션 번호(예: 9-11)로
 > 자세한 내용을 넘긴다. 여기서 완료 내역을 다시 설명하지 않는다.
 >
-> 최종 업데이트: 2026-07-03
+> 최종 업데이트: 2026-07-03 (Section 도메인 모델 완료, 9-13)
 
 ---
 
@@ -33,6 +33,7 @@
 - [ ] Cue Label — CueList 미리보기가 영상 Page의 텍스트 오버레이 유무를 안 보여줌(지금 `(video)`로만 표시)
 - [ ] Image Overlay — 텍스트 오버레이가 지금 video Page에만 적용됨(9-7). image Page엔 아직
 - [ ] Library — Songs/Backgrounds/Videos 메뉴. 뼈대(빈 메뉴)만이라도 우선.
+- [ ] Section UI — 도메인 모델/Store/Persistence는 완료(9-13). CueList에서 실제로 접기/펼치기, Section 추가/편집, Page 드래그로 Section 넘나들기 화면이 아직 없음. 지금은 데이터만 존재하고 화면엔 아무것도 안 보임.
 
 ---
 

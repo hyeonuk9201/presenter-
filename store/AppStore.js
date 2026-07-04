@@ -29,7 +29,7 @@
  *     Subscriber가 등록되어 있는지 신경 쓰지 않는다.
  */
 
-import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, sanitizePresentation } from '../domain/Presentation.js'
+import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, sanitizePresentation, addSection, removeSection, replaceSection, getSectionRanges as getPresentationSectionRanges } from '../domain/Presentation.js'
 import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
 import { migrateSnapshot } from '../persistence/Schema.js'
 
@@ -133,6 +133,8 @@ function deriveMutations(actionType, prev, next) {
 
   const pagesChanged =
     prev.presentation.pages !== next.presentation.pages
+  const sectionsChanged =
+    prev.presentation.sections !== next.presentation.sections
   const titleChanged =
     prev.presentation.title !== next.presentation.title
   const selectionChanged =
@@ -143,6 +145,7 @@ function deriveMutations(actionType, prev, next) {
     prev.presenterState.appMode !== next.presenterState.appMode
 
   if (pagesChanged) mutations.push('SET_PAGES')
+  if (sectionsChanged) mutations.push('SET_SECTIONS')
   if (titleChanged) mutations.push('SET_TITLE')
   if (selectionChanged) mutations.push('SET_SELECTION')
   if (liveChanged) mutations.push('SET_LIVE_PAGE')
@@ -255,6 +258,26 @@ function reduce(state, action) {
         presentation: { ...state.presentation, title: action.title },
       }
 
+    // ── Section (FutureEditor.md D-Editor-1~3) ──
+
+    case 'ADD_SECTION':
+      return {
+        ...state,
+        presentation: addSection(state.presentation, action.section),
+      }
+
+    case 'REMOVE_SECTION':
+      return {
+        ...state,
+        presentation: removeSection(state.presentation, action.sectionId),
+      }
+
+    case 'UPDATE_SECTION':
+      return {
+        ...state,
+        presentation: replaceSection(state.presentation, action.section),
+      }
+
     // ── PresenterState ────────────────────
 
     case 'SELECT_PAGE':
@@ -308,4 +331,13 @@ export function getSelectedPage() {
 export function getLivePage() {
   const { presentation, presenterState } = state
   return presentation.pages.find(p => p.id === presenterState.livePageId) ?? null
+}
+
+/**
+ * Section별 담당 Page 구간을 계산해 반환한다(CueList Outline 표시용).
+ * domain/Presentation.js의 getSectionRanges 참조 — 매번 pages/sections로부터
+ * 새로 계산되는 파생 값이며 Store에 저장되지 않는다.
+ */
+export function getSectionRanges() {
+  return getPresentationSectionRanges(state.presentation)
 }

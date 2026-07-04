@@ -13,8 +13,8 @@
  *     격리된 부수효과이며, 실패해도 dispatch()를 다시 호출하지 않는다.
  *
  * 책임:
- *   - 관심 Mutation 타입 구독 (Domain Mutation만 등록 — SET_PAGES, SET_TITLE,
- *     SET_SELECTION, SET_LIVE_PAGE)
+ *   - 관심 Mutation 타입 구독 (Domain Mutation만 등록 — SET_PAGES, SET_SECTIONS,
+ *     SET_TITLE, SET_SELECTION, SET_LIVE_PAGE)
  *   - Runtime State → localStorage 직렬화
  *   - PersistenceState(isDirty, lastSavedAt, saveStatus)를 로컬로 관리하고,
  *     별도 콜백 채널로만 외부에 알림 (AppStore Mutation 경로 사용 안 함)
@@ -92,6 +92,7 @@ function save(presentation) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(withSchemaVersion({
       title: presentation.title,
       pages: presentation.pages,
+      sections: presentation.sections,
     })))
     setPersistenceState({
       isDirty: false,
@@ -123,7 +124,9 @@ export const PersistenceSubscriber = {
 
   // Domain Mutation만 등록한다. PersistenceState 자체의 변경은
   // 별도 채널(onPersistenceStateChange)로 통지하므로 여기 포함하지 않는다.
-  interestedMutations: ['SET_PAGES', 'SET_TITLE', 'SET_SELECTION', 'SET_LIVE_PAGE'],
+  // SET_SECTIONS 추가(2026-07-03, FutureEditor.md D-Editor-2) — Section의
+  // collapsed/color/note/title은 새로고침 후에도 유지되어야 한다.
+  interestedMutations: ['SET_PAGES', 'SET_SECTIONS', 'SET_TITLE', 'SET_SELECTION', 'SET_LIVE_PAGE'],
 
   notify(mutations, state) {
     setPersistenceState({ isDirty: true })

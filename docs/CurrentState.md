@@ -614,6 +614,43 @@ autoAdvance:  { enabled: false, duration: 5000 } // ms
 ### 검증
 Node로 세 타입 모두 필드가 올바른 기본값/커스텀값으로 생성되는지, `isValidPage()`가 여전히 통과하는지 확인함. 실제 브라우저 동작 변화는 없음(값만 추가되고 아무것도 소비 안 하므로 회귀 리스크 낮음) — 별도 브라우저 테스트 불필요.
 
+## 9-13. Section 도메인 모델 구현 (2026-07-03, FutureEditor.md D-Editor-1~3)
+
+### 배경
+FutureEditor.md 검토 중 남겨둔 3가지 열린 질문(소속 표현 방식/영속 여부/경계 무결성)을 D-Editor-1~3으로 확정한 뒤 착수. 이번 세션은 **도메인 모델 + Store + Persistence까지만** — CueList 등 실제 화면 UI는 범위 밖(TODO.md의 Feature TODO로 별도 등록).
+
+### 구현
+
+**`domain/Section.js`(신규)**: `createSection({ title, note, collapsed, color, startPageId })`, `isValidSection()`. Page.js와 동일한 스타일 — 순수 데이터 구조만.
+
+**`domain/Presentation.js`**:
+- `createPresentation()`에 `sections: []` 추가
+- `sanitizePresentation()`: `sections` 배열 검증 추가 — `isValidSection()` 통과 + `startPageId`가 (검증된) `pages` 안에 실제로 존재해야 유효. 참조 끊긴 Section은 제외.
+- `addSection`/`removeSection`/`replaceSection`: Page 쪽 CRUD와 동일한 패턴.
+- `removePage()`에 `reconcileSectionsAfterPageRemoval()` 연결 — D-Editor-3 구현. Section의 `startPageId`가 삭제되면 삭제 전 순서 기준으로 다음 남은 Page로 재조정, 남은 Page가 없으면 Section 자체 제거. **참조 동일성 보존**: 삭제되는 Page가 어떤 Section의 시작점도 아니면 `sections` 배열은 원래 참조 그대로 반환 — 안 그러면 `.map()`이 매번 새 배열을 만들어 무관한 Page 삭제에도 `SET_SECTIONS`가 잘못 발동한다(테스트 중 발견해서 수정).
+- `getSectionRanges(presentation)`: Section을 `pages` 배열 순서로 정렬하고 각 Section이 담당하는 Page 구간을 계산하는 순수 함수. "끝 지점"은 저장하지 않고 항상 계산 — 다음 Section 시작 직전까지, 마지막은 배열 끝까지.
+
+**`store/AppStore.js`**:
+- `ADD_SECTION`/`REMOVE_SECTION`/`UPDATE_SECTION` 리듀서 케이스 추가
+- `deriveMutations()`에 `sectionsChanged` 감지 추가 → `SET_SECTIONS` mutation
+- `getSectionRanges()` 편의 export 추가 (`getSelectedPage`/`getLivePage`와 같은 패턴)
+
+**`persistence/PersistenceSubscriber.js`**: `interestedMutations`에 `SET_SECTIONS` 추가(D-Editor-2), 저장 스냅샷에 `sections` 필드 포함. 스키마 버전은 안 올림(9-11 결정대로 — 비breaking 필드 추가).
+
+### 알려진 한계 (TODO.md 미등록, 여기 기록)
+`REMOVE_PAGE`의 Undo(`INSERT_PAGE_AT`)는 Page 위치만 복원하고, 그 삭제가 유발한 Section 재조정/제거까지는 되돌리지 않는다. Page 하나 삭제로 Section 경계까지 매번 히스토리에 남기는 비용이 이 rare-case보다 크다고 판단해 지금은 받아들임 — `domain/Presentation.js`의 `reconcileSectionsAfterPageRemoval()` 주석에도 명시.
+
+### 변경 파일
+`domain/Section.js`(신규), `domain/Presentation.js`, `store/AppStore.js`, `persistence/PersistenceSubscriber.js`
+
+### 검증
+Node로 전체 파이프라인 실통합 테스트 완료:
+- 정상 구간 계산, Section 시작점 Page 삭제 시 재조정, Section이 통째로 사라지는 경우, `sanitizePresentation`의 참조 끊긴 Section 제거 — 전부 의도대로 동작
+- 실제 `dispatch()`를 통한 `ADD_SECTION`/`UPDATE_SECTION`/`REMOVE_SECTION`/`REMOVE_PAGE` 전체 시나리오에서 mutation이 정확히(무관한 경우 `SET_SECTIONS` 안 뜨고, 관련 있는 경우만 뜨는 것까지) 발동하는지 확인
+- localStorage 폴리필로 저장→`migrateSnapshot`→`sanitizePresentation` 전체 라운드트립에서 `sections`가 정확히 왕복되는지 확인
+
+**브라우저 실사용 테스트는 이번 범위에서 의미 없음** — 화면에 아무것도 안 보인다(UI 없음). CueList Outline UI가 붙는 다음 단계에서 브라우저 테스트 필요.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
