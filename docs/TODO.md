@@ -5,7 +5,7 @@
 > 완료된 항목은 체크만 하고 CurrentState.md의 해당 세션 번호(예: 9-11)로
 > 자세한 내용을 넘긴다. 여기서 완료 내역을 다시 설명하지 않는다.
 >
-> 최종 업데이트: 2026-07-03 (Section UI 완료, 9-14)
+> 최종 업데이트: 2026-07-04 (Section Migration TODO 추가 — D-Editor-4 방향 확정에 따름, 아직 미착수)
 
 ---
 
@@ -23,6 +23,33 @@
 
 ---
 
+## Section Migration TODO (D-Editor-4, 2026-07-04 — 아직 미착수)
+
+`FutureEditor.md`의 `D-Editor-4`(Page 중심 소속 모델, D-Editor-1/D-Editor-3
+대체)가 방향으로 확정됨. 아래는 실제 구현 시 필요한 항목이다 — 착수 전
+반드시 `D-Editor-4` 전체와 `Research/2026-07-04 Workflow Separation.md`를
+먼저 읽을 것.
+
+- [ ] `domain/Section.js` — `startPageId` 제거, `isValidSection()` 갱신
+- [ ] `domain/Page.js` — `sectionId` 필드 추가(기본 `null`), `isValidPage()` 갱신
+- [ ] `domain/Presentation.js` — `sections[]` → `sectionIds[]` + `sectionMap{}` 전환, `getSectionRanges()`/`reconcileSectionsAfterPageRemoval()` 제거, `movePageToSection()` 신규(규칙 1), `movePage()`에 자동 흡수 로직 추가(규칙 5), `removeSection()`에 소속 Page `sectionId=null` 처리(규칙 3), Flow View용 그룹 계산 함수 신규(규칙 4)
+- [ ] `sanitizePresentation()` — 검증 방향 반전(Section→Page 참조 대신 Page→Section 참조 무결성 확인), 참조 끊기면 `sectionId=null` 폴백(9-11 정책 재사용)
+- [ ] `store/AppStore.js` — `deriveMutations()`의 `sectionsChanged` 판정을 `sectionIds`/`sectionMap` 기준으로 변경, `MOVE_PAGE_TO_SECTION` 액션 추가
+- [ ] `history/HistoryManager.js` — `MOVE_PAGE_TO_SECTION`의 `computeInverse()` 케이스 추가 (원래 위치+원래 sectionId를 함께 복원)
+- [ ] `persistence/Schema.js` — `CURRENT_SCHEMA_VERSION` 2로 상향, v1→v2 마이그레이션(옛 Range 계산으로 각 Page의 `sectionId`를 1회 역산해 채움)
+- [ ] `ui/CueList.js` (Flow View) — `getSectionRanges()` 의존 제거, 신규 그룹 계산 함수로 교체, "미분류" 그룹 렌더링을 groupBy 결과 기준으로 변경
+- [ ] `index.html` — Section 추가 버튼이 더 이상 "선택된 Page 필요" 조건을 요구하지 않도록 변경(Section이 Page 없이도 생성 가능해짐)
+
+이 작업이 끝나면 아래 "Feature TODO"의 "Section UI" 항목 중 남은
+하위 항목(Section 삭제 UI, 색상/메모 편집 UI)을 이 모델 위에서 이어간다.
+Page 드래그 재정렬 UI(별도 항목, 아래)도 이 모델을 전제로 설계해야 한다.
+
+- [ ] (Research, MVP 아님) Flow View / Content Browser 이중 뷰 구조 —
+  `Research/2026-07-04 Workflow Separation.md` 참조. 아직 질문 단계이며
+  구현 우선순위 대상이 아니다. Architecture.md에도 아직 반영하지 않는다.
+
+---
+
 ## Feature TODO
 
 사용자가 직접 체감하는 기능. 실제 동작 구현이 완료 기준이다 — 필드만
@@ -33,8 +60,8 @@
 - [ ] Cue Label — CueList 미리보기가 영상 Page의 텍스트 오버레이 유무를 안 보여줌(지금 `(video)`로만 표시)
 - [ ] Image Overlay — 텍스트 오버레이가 지금 video Page에만 적용됨(9-7). image Page엔 아직
 - [ ] Library — Songs/Backgrounds/Videos 메뉴. 뼈대(빈 메뉴)만이라도 우선.
-- [x] Section UI — 도메인 모델/Store/Persistence(9-13) + CueList Section Tree/접기/펼치기/Section 추가(9-14) 완료. 남은 건: Section 삭제 UI, 색상/메모 편집 UI, Page 드래그 재정렬(이건 Section 문제가 아니라 애초에 드래그 재정렬 UI 자체가 프로젝트에 없음 — 별도 항목으로 분리해서 아래 등록).
-- [ ] Page 드래그 재정렬 UI — `domain/Presentation.js`의 `movePage()`는 있지만 이걸 호출하는 화면(드래그 핸들 등)이 CueList에 없음. Section과 무관하게 이전부터 없던 기능.
+- [x] Section UI — 도메인 모델/Store/Persistence(9-13) + CueList Section Tree/접기/펼치기/Section 추가(9-14) 완료. **단, 이 구현은 D-Editor-1(Range 모델) 기준이며 위 "Section Migration TODO"(D-Editor-4)로 대체될 예정** — 남은 하위 항목(Section 삭제 UI, 색상/메모 편집 UI)은 마이그레이션 완료 후 이어간다.
+- [ ] Page 드래그 재정렬 UI — `domain/Presentation.js`의 `movePage()`는 있지만 이걸 호출하는 화면(드래그 핸들 등)이 CueList에 없음. **D-Editor-4의 "자동 흡수" 규칙(순수 위치 이동 시 sectionId 재계산)을 전제로 설계할 것** — Section Migration TODO 완료 후 착수 권장.
 
 ---
 

@@ -7,6 +7,24 @@
 
 ---
 
+# 진행 중인 설계 변경 (2026-07-04, 아직 미구현)
+
+Section 소속 모델을 전면 재검토하는 논의가 진행되어 방향이 확정되었다 —
+**아직 코드에는 반영되지 않았다.** 아래 "9. Section 도메인 모델
+구현"(9-13~9-15)이 기록한 기존 구현(순서 기반 Range 모델, D-Editor-1)은
+이 절 시점까지는 정확한 사실이지만, 최신 설계 방향은 아니다.
+
+- **확정된 결정**: `FutureEditor.md`의 `D-Editor-4`(Page 중심 소속 모델
+  — `Page.sectionId`, Section은 순수 grouping metadata, Supersedes
+  D-Editor-1/D-Editor-3) 참조. 이 문서에 세부 규칙과 이유가 있다.
+- **아직 Research 단계인 아이디어** (구현 범위 아님, 위 결정과 혼동 금지):
+  `Research/2026-07-04 Workflow Separation.md` 참조 — Flow View/Content
+  Browser 이중 뷰 구조, Library/Asset 재사용 등 장기 방향성.
+- **남은 실제 작업**: `TODO.md`의 Section Migration 항목 참조 — 이 절이
+  실제 코드로 반영되면 새 세션 번호(예: 9-16)로 여기 다시 기록한다.
+
+---
+
 # 구현 단계 개요
 
 Architecture v1.0(Frozen) 승인 이후 진행한 Implementation Phase의 누적 결과다.
