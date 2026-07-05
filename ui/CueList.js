@@ -267,8 +267,9 @@ export function createCueList(containerEl) {
    * 2026-07-05: image/video Page의 `label`(라벨, 기본값은 업로드 시
    * 원본 파일명)을 표시한다 — 이전엔 `(video)`/`(image)`로만 나와서
    * CueList만 보고는 어떤 미디어인지 알 수 없었다(클릭해봐야 확인
-   * 가능). 텍스트 오버레이(9-7)가 있으면 라벨 뒤에 첫 줄을 덧붙인다 —
-   * 두 정보 다 CueList 미리보기로 노출해야 하는 것이라 함께 처리한다.
+   * 가능). 텍스트 오버레이(9-7)가 있으면 "가사 첫줄 — 파일명" 순서로
+   * 붙인다(실사용 피드백으로 순서 확정, 2026-07-05) — 운영자가 실제로
+   * 찾는 건 가사 쪽이라 먼저 보여야 스캔이 빠르다.
    */
   function getPreviewText(page) {
     if (page.type === 'text') {
@@ -277,7 +278,7 @@ export function createCueList(containerEl) {
 
     const base = page.label || `(${page.type})`
     if (page.text) {
-      return `${base} — ${page.text.split('\n')[0]}`
+      return `${page.text.split('\n')[0]} — ${base}`
     }
     return base
   }
