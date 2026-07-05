@@ -755,6 +755,22 @@ Node로 `createImagePage`/`createVideoPage`의 `label` 필드 생성 확인, `ge
 ### 수정 (2026-07-05, 표시 순서)
 브라우저 테스트 전 피드백으로 순서 반전 — "가사 — 파일명"으로 확정(원래 계획은 "파일명 — 가사"였음). 운영자가 CueList에서 실제로 찾는 건 가사 쪽이라 먼저 나와야 스캔이 빠르다는 이유.
 
+## 9-17. 이미지 위 텍스트 오버레이 (2026-07-05, TODO.md Image Overlay 항목)
+
+### 배경
+9-7에서 영상(video) Page에만 넣었던 텍스트 오버레이를 이미지(image) Page에도 적용. TODO.md에 계획되어 있던 항목.
+
+### 구현
+`view/PageView.js`의 `createPageView()` image 분기에 video 분기와 동일한 3줄(`if (page.text) { slide.appendChild(createTextLayer(page)) }`)을 추가. 에디터 UI(가사 입력창)는 9-7 때부터 이미 Page 타입과 무관하게 동작하고 있었으므로 추가 UI 작업 불필요 — video 때와 마찬가지로 렌더러(View)에서만 막혀 있었다.
+
+`.text-layer`의 기존 CSS(z-index, pointer-events:none, GPU 레이어 승격)는 이미지에도 그대로 적용된다 — 이미지는 video처럼 iOS 하드웨어 디코딩 레이어를 안 쓰므로 9-10에서 우회했던 문제 자체가 애초에 발생하지 않는다(참고용, 별도 대응 불필요).
+
+### 변경 파일
+`view/PageView.js`
+
+### 검증
+`node --check` 통과. 로직이 9-7과 완전히 동일한 패턴 재사용이라 별도 Node 시나리오 테스트는 생략. **브라우저 실사용 테스트 필요**: 이미지 Page에 가사 입력 → 저장 → 이미지 위에 텍스트가 겹쳐 보이는지.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

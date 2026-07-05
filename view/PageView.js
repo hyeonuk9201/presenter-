@@ -43,6 +43,13 @@ export function createPageView(page, media = null) {
     slide.appendChild(createTextLayer(page))
   } else if (page.type === 'image') {
     slide.appendChild(createImageLayer(media))
+
+    // 이미지 위 텍스트 오버레이(2026-07-05) — 9-7에서 video에 만든 것과
+    // 완전히 동일한 패턴. 에디터 UI는 이미 타입 무관하게 동작하므로
+    // 여기서 막던 것도 video 때와 같은 이유(렌더러가 안 그림)였다.
+    if (page.text) {
+      slide.appendChild(createTextLayer(page))
+    }
   } else if (page.type === 'video') {
     slide.appendChild(createVideoLayer(media))
 
