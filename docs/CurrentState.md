@@ -771,6 +771,22 @@ Node로 `createImagePage`/`createVideoPage`의 `label` 필드 생성 확인, `ge
 ### 검증
 `node --check` 통과. 로직이 9-7과 완전히 동일한 패턴 재사용이라 별도 Node 시나리오 테스트는 생략. **브라우저 실사용 테스트 필요**: 이미지 Page에 가사 입력 → 저장 → 이미지 위에 텍스트가 겹쳐 보이는지.
 
+## 9-18. Library 메뉴 뼈대 + StorageAdapter 추출 (2026-07-05, TODO.md Architecture 항목 2건)
+
+### Library 메뉴 뼈대
+헤더에 "라이브러리" 버튼 → 모달 오픈. Songs/Backgrounds/Videos 세 카테고리, 각각 "준비 중" placeholder만 표시. Store/Domain 연결 없음 — 요청대로 메뉴 껍데기만. `index.html`에 `#library-modal` 추가, 열기/닫기(바깥 클릭 포함)만 연결.
+
+### StorageAdapter 추출
+`persistence/StorageAdapter.js` 신설. `localStorage.setItem`/`getItem` 직접 호출이 `PersistenceSubscriber.js`(쓰기)와 `AppStore.js`(읽기) 두 곳에 흩어져 있던 걸 `save(key, value)`/`load(key)` 두 함수로 모았다. 두 호출부 다 이 함수를 거치도록 교체.
+
+**의도적으로 안 고친 것**: `AppStore.js`의 초기 state는 여전히 모듈 로드 시점에 동기(sync)로 읽는다(`storageLoad()`가 동기 함수). File System Access API나 클라우드 같은 진짜 비동기 저장소로 바꾸려면 이 동기 부팅 가정 자체를 걷어내야 하는데, 이번 범위는 "호출 지점을 한 곳으로 모으는 것"까지다 — 아키텍처 리뷰(2026-07-03) 때 이미 식별했던 한계를 그대로 문서화만 하고 넘어간다.
+
+### 변경 파일
+`index.html`(Library 모달), `persistence/StorageAdapter.js`(신규), `persistence/PersistenceSubscriber.js`, `store/AppStore.js`
+
+### 검증
+`node --check` 전체 통과. localStorage 폴리필로 `dispatch → PersistenceSubscriber → StorageAdapter.save → localStorage` 전체 경로가 정상 동작하는지 확인(9-11 때와 동일한 방식). Library 모달은 순수 UI라 별도 로직 테스트 불필요 — **브라우저에서 버튼 클릭/닫기만 육안 확인 필요**.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

@@ -458,6 +458,59 @@
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
+    /* ── 라이브러리 모달 (2026-07-05, 뼈대만) ──── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-box {
+      width: 480px;
+      max-width: 90vw;
+      max-height: 80vh;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .modal-body {
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .library-category-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+    .library-empty {
+      font-size: 13px;
+      color: var(--text-muted);
+      padding: 12px;
+      background: var(--bg-raised);
+      border-radius: 4px;
+      border: 1px dashed var(--border);
+    }
   </style>
 </head>
 <body>
@@ -476,6 +529,8 @@
       <button id="undo-btn" class="history-btn" title="실행 취소 (Ctrl+Z)" disabled>↶</button>
       <button id="redo-btn" class="history-btn" title="다시 실행 (Ctrl+Shift+Z)" disabled>↷</button>
     </div>
+
+    <button id="library-btn" class="btn btn-ghost">라이브러리</button>
 
     <div id="mode-toggle">
       <button class="mode-btn active" data-mode="edit">편집</button>
@@ -586,6 +641,30 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- 라이브러리 (2026-07-05, TODO.md 뼈대만 — 기능 없음) -->
+<div id="library-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>라이브러리</span>
+      <button id="library-close-btn" class="btn btn-ghost">닫기</button>
+    </div>
+    <div class="modal-body">
+      <div class="library-category">
+        <div class="library-category-title">Songs</div>
+        <div class="library-empty">준비 중 — 아직 기능이 연결되지 않았습니다.</div>
+      </div>
+      <div class="library-category">
+        <div class="library-category-title">Backgrounds</div>
+        <div class="library-empty">준비 중 — 아직 기능이 연결되지 않았습니다.</div>
+      </div>
+      <div class="library-category">
+        <div class="library-category-title">Videos</div>
+        <div class="library-empty">준비 중 — 아직 기능이 연결되지 않았습니다.</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -804,6 +883,18 @@
       type: 'ADD_SECTION',
       payload: { section: createSection({ title: title || '섹션', startPageId: page.id }) },
     })
+  })
+
+  // ── 라이브러리 모달 (2026-07-05, 뼈대만 — 기능 없음) ──
+  const libraryModal = document.getElementById('library-modal')
+  document.getElementById('library-btn').addEventListener('click', () => {
+    libraryModal.style.display = 'flex'
+  })
+  document.getElementById('library-close-btn').addEventListener('click', () => {
+    libraryModal.style.display = 'none'
+  })
+  libraryModal.addEventListener('click', (e) => {
+    if (e.target === libraryModal) libraryModal.style.display = 'none' // 바깥 클릭 시 닫기
   })
 
   // ── Editor: 가사 추가 ────────────────────

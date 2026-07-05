@@ -23,7 +23,9 @@
  *   - State Mutation
  *   - Renderer 호출
  *   - Undo/Redo
- *   - JSON 생성 방식 결정 외의 Storage 접근 방식 (StorageAdapter 추상화는 범위 밖)
+ *   - JSON 생성 방식 결정. 실제 물리 저장(localStorage) 접근은
+ *     StorageAdapter.js에 위임한다(2026-07-05, 아키텍처 리뷰 TODO 완료 —
+ *     이전엔 "StorageAdapter 추상화는 범위 밖"이었으나 이제 아니다)
  *
  * dispatch당 저장 호출 횟수: 1회.
  *   하나의 dispatch()는 notifyMutationSubscribers()를 통해 PersistenceSubscriber의
@@ -36,6 +38,7 @@
 
 import { STORAGE_KEY } from '../store/AppStore.js'
 import { withSchemaVersion } from './Schema.js'
+import { save as storageSave } from './StorageAdapter.js'
 
 // ─────────────────────────────────────────
 // PersistenceState (로컬 상태 — AppStore에 두지 않음, D-015)
@@ -89,7 +92,7 @@ function save(presentation) {
   setPersistenceState({ saveStatus: 'saving' })
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(withSchemaVersion({
+    storageSave(STORAGE_KEY, JSON.stringify(withSchemaVersion({
       title: presentation.title,
       pages: presentation.pages,
       sections: presentation.sections,

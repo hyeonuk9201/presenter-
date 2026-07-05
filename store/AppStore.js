@@ -32,9 +32,11 @@
 import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, sanitizePresentation, addSection, removeSection, replaceSection, getSectionRanges as getPresentationSectionRanges } from '../domain/Presentation.js'
 import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
 import { migrateSnapshot } from '../persistence/Schema.js'
+import { load as storageLoad } from '../persistence/StorageAdapter.js'
 
 // ─────────────────────────────────────────
-// localStorage 헬퍼 (읽기만 유지 — 쓰기는 PersistenceSubscriber로 이동, D-015)
+// 저장소 읽기 헬퍼 (읽기만 유지 — 쓰기는 PersistenceSubscriber로 이동, D-015)
+// 실제 물리 저장소 접근은 StorageAdapter.js에 위임(2026-07-05)
 // ─────────────────────────────────────────
 
 /**
@@ -55,7 +57,7 @@ export const STORAGE_KEY = 'tc-presenter-presentation'
 
 function loadPresentation() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = storageLoad(STORAGE_KEY)
     if (!raw) return null
 
     const parsed = JSON.parse(raw) // { version, title, pages }
