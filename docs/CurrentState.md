@@ -755,6 +755,11 @@ Node로 `createImagePage`/`createVideoPage`의 `label` 필드 생성 확인, `ge
 ### 수정 (2026-07-05, 표시 순서)
 브라우저 테스트 전 피드백으로 순서 반전 — "가사 — 파일명"으로 확정(원래 계획은 "파일명 — 가사"였음). 운영자가 CueList에서 실제로 찾는 건 가사 쪽이라 먼저 나와야 스캔이 빠르다는 이유.
 
+### 브라우저 테스트 결과 (2026-07-05)
+전반적으로 이상 없음(업로드 시 파일명 즉시 표시, 라벨 입력창 수정→저장→반영 모두 정상). 다만 "가사첫줄 — 파일명" 조합 표시는 CueList 항목 폭이 좁아 텍스트가 잘리는 경우, 평상시 화면에서는 파일명 부분까지 잘려서 실제로 순서가 맞게 붙었는지 육안으로 확인하기 어려웠다 — Page 삭제 버튼을 눌렀을 때 뜨는 확인 문구(전체 텍스트를 그대로 보여줌)를 통해서만 우회적으로 확인 가능했다.
+
+**의도적으로 안 고침**: 이걸 정면으로 고치려면(예: 항목에 hover 시 풀네임 툴팁, 또는 항목 높이/폭 자체를 늘리는 CueList 레이아웃 변경) 영향 범위가 이번 세션 스코프보다 커진다고 판단 — 당장 고치지 않고 알려진 제약으로 남겨둔다. TODO.md에 후속 항목으로 기록.
+
 ## 9-17. 이미지 위 텍스트 오버레이 (2026-07-05, TODO.md Image Overlay 항목)
 
 ### 배경
@@ -769,7 +774,10 @@ Node로 `createImagePage`/`createVideoPage`의 `label` 필드 생성 확인, `ge
 `view/PageView.js`
 
 ### 검증
-`node --check` 통과. 로직이 9-7과 완전히 동일한 패턴 재사용이라 별도 Node 시나리오 테스트는 생략. **브라우저 실사용 테스트 필요**: 이미지 Page에 가사 입력 → 저장 → 이미지 위에 텍스트가 겹쳐 보이는지.
+`node --check` 통과. 로직이 9-7과 완전히 동일한 패턴 재사용이라 별도 Node 시나리오 테스트는 생략.
+
+### 브라우저 테스트 결과 (2026-07-05)
+이미지 Page에 가사 입력 → 저장 → 이미지 위에 텍스트 오버레이 정상 표시 확인. 이상 없음.
 
 ## 9-18. Library 메뉴 뼈대 + StorageAdapter 추출 (2026-07-05, TODO.md Architecture 항목 2건)
 
@@ -785,7 +793,10 @@ Node로 `createImagePage`/`createVideoPage`의 `label` 필드 생성 확인, `ge
 `index.html`(Library 모달), `persistence/StorageAdapter.js`(신규), `persistence/PersistenceSubscriber.js`, `store/AppStore.js`
 
 ### 검증
-`node --check` 전체 통과. localStorage 폴리필로 `dispatch → PersistenceSubscriber → StorageAdapter.save → localStorage` 전체 경로가 정상 동작하는지 확인(9-11 때와 동일한 방식). Library 모달은 순수 UI라 별도 로직 테스트 불필요 — **브라우저에서 버튼 클릭/닫기만 육안 확인 필요**.
+`node --check` 전체 통과. localStorage 폴리필로 `dispatch → PersistenceSubscriber → StorageAdapter.save → localStorage` 전체 경로가 정상 동작하는지 확인(9-11 때와 동일한 방식). Library 모달은 순수 UI라 별도 로직 테스트 불필요.
+
+### 브라우저 테스트 결과 (2026-07-05)
+Library 모달: 헤더 버튼 클릭 → 오픈, Songs/Backgrounds/Videos 3칸 "준비 중" 문구 확인, 닫기 버튼과 바깥 클릭 모두 정상 닫힘 확인. StorageAdapter: 평소처럼 편집 → 저장 → 새로고침 후 데이터 유지 확인(겉보기 동작 변화 없음, 내부 경로 재배선만 확인하는 성격이라 이걸로 충분). 둘 다 이상 없음.
 
 ## 문서 정리 (부수 작업)
 
