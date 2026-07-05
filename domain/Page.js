@@ -117,7 +117,7 @@ export function createTextPage({
  *
  * @param {{ mediaId: string }} params
  */
-export function createImagePage({ mediaId, transition, autoAdvance } = {}) {
+export function createImagePage({ mediaId, label = '', transition, autoAdvance } = {}) {
   if (!mediaId || typeof mediaId !== 'string') {
     throw new Error('[Page] createImagePage: mediaId는 필수 문자열이다')
   }
@@ -129,6 +129,10 @@ export function createImagePage({ mediaId, transition, autoAdvance } = {}) {
 
     // ── Content ───────────────────────────
     mediaId, // IndexedDB(MediaStore)에 저장된 Media 레코드 참조
+    label, // CueList 식별용 표시 이름(2026-07-05). 업로드 시 원본 파일명을
+           // 기본값으로 채우고(index.html), 이후 사용자가 자유롭게 수정
+           // 가능하다 — MediaStore의 fileName(원본, 불변)과는 별개로,
+           // Page 단위로 편집 가능한 별도 필드다.
 
     // ── Behavior (2026-07-03, 뼈대만) ──────
     ...createBehaviorDefaults({ transition, autoAdvance }),
@@ -158,7 +162,7 @@ export function createImagePage({ mediaId, transition, autoAdvance } = {}) {
  *
  * @param {{ mediaId: string }} params
  */
-export function createVideoPage({ mediaId, transition, autoAdvance } = {}) {
+export function createVideoPage({ mediaId, label = '', transition, autoAdvance } = {}) {
   if (!mediaId || typeof mediaId !== 'string') {
     throw new Error('[Page] createVideoPage: mediaId는 필수 문자열이다')
   }
@@ -170,6 +174,7 @@ export function createVideoPage({ mediaId, transition, autoAdvance } = {}) {
 
     // ── Content ───────────────────────────
     mediaId,
+    label, // domain/Page.js의 createImagePage 주석 참조 — 동일한 용도
 
     // ── Behavior (2026-07-03, 뼈대만) ──────
     ...createBehaviorDefaults({ transition, autoAdvance }),

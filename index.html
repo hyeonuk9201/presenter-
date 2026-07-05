@@ -383,6 +383,18 @@
       font-size: 12px;
     }
 
+    .style-text-input {
+      width: 100%;
+      padding: 5px 8px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-primary);
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .style-text-input::placeholder { color: var(--text-muted); }
+
     .font-size-row {
       display: flex;
       align-items: center;
@@ -517,6 +529,10 @@
           placeholder="가사를 입력하세요.&#10;빈 줄로 절을 구분합니다.&#10;&#10;예)&#10;주께 감사해 할렐루야&#10;주께 감사해 아멘&#10;&#10;찬양해 영원히&#10;찬양해 주님을"
         ></textarea>
         <div id="editor-sidebar">
+          <div class="style-row">
+            <div class="sidebar-label">라벨 <span style="text-transform:none;font-weight:400;">(CueList 표시용, 미디어 Page만 의미 있음)</span></div>
+            <input type="text" class="style-text-input" id="page-label" placeholder="예: worship-intro.mp4">
+          </div>
           <div class="style-row">
             <div class="sidebar-label">정렬</div>
             <select class="style-select" id="h-align">
@@ -846,9 +862,9 @@
 
       let page
       if (file.type.startsWith('image/')) {
-        page = createImagePage({ mediaId })
+        page = createImagePage({ mediaId, label: file.name })
       } else if (file.type.startsWith('video/')) {
-        page = createVideoPage({ mediaId })
+        page = createVideoPage({ mediaId, label: file.name })
       } else {
         // image/video가 아닌 파일은 추가하지 않는다 — accept 속성으로
         // 대부분 걸러지지만, 운영체제 파일 선택창에서 우회될 수 있으므로
@@ -870,6 +886,7 @@
     if (!page) return
 
     const text = document.getElementById('lyrics-input').value
+    const label = document.getElementById('page-label').value
     const horizontalAlign = document.getElementById('h-align').value
     const verticalAlign = document.getElementById('v-align').value
     const fontSize = Number(document.getElementById('font-size').value)
@@ -881,7 +898,7 @@
 
     execute({
       type: 'UPDATE_PAGE',
-      payload: { page: { ...page, text, horizontalAlign, verticalAlign, fontSize, lineHeight, color, fontWeight, textStroke, textShadow } },
+      payload: { page: { ...page, text, label, horizontalAlign, verticalAlign, fontSize, lineHeight, color, fontWeight, textStroke, textShadow } },
     })
   })
 
@@ -892,6 +909,7 @@
   const saveBtn = document.getElementById('save-btn')
   const importBtn = document.getElementById('import-btn')
   const lyricsInput = document.getElementById('lyrics-input')
+  const pageLabelInput = document.getElementById('page-label')
   const hAlignEl = document.getElementById('h-align')
   const vAlignEl = document.getElementById('v-align')
   const fontWeightEl = document.getElementById('font-weight')
@@ -923,6 +941,7 @@
     if (page) {
       // 수정 모드: 선택된 Page 내용 로드
       lyricsInput.value = page.text ?? ''
+      pageLabelInput.value = page.label ?? ''
       hAlignEl.value = page.horizontalAlign ?? 'center'
       vAlignEl.value = page.verticalAlign ?? 'bottom'
       fontWeightEl.value = page.fontWeight ?? 'normal'
@@ -943,6 +962,7 @@
     } else {
       // 추가 모드: 입력 영역 + 스타일 초기화
       lyricsInput.value = ''
+      pageLabelInput.value = ''
       hAlignEl.value = 'center'
       vAlignEl.value = 'bottom'
       fontWeightEl.value = 'normal'

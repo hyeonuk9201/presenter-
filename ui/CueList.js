@@ -34,7 +34,7 @@ export function createCueList(containerEl) {
     // 추가/삭제/제목/색상/접기 상태가 바뀌면 구조 자체(Section Tree)가
     // 달라지므로 다시 그려야 한다. pages 변경 감지 로직과 별개 관심사라
     // 이름은 pagesChanged로 유지하되 실제로는 "다시 그려야 하는가"를 뜻한다.
-    const pagesFingerprint = pages.map(p => `${p.id}:${p.type}:${p.text}:${p.mediaId}`).join('|')
+    const pagesFingerprint = pages.map(p => `${p.id}:${p.type}:${p.text}:${p.mediaId}:${p.label}`).join('|')
     const sectionsFingerprint = sections
       .map(s => `${s.id}:${s.title}:${s.collapsed}:${s.color}:${s.startPageId}`)
       .join('|')
@@ -263,10 +263,22 @@ export function createCueList(containerEl) {
     return el
   }
 
+  /**
+   * 2026-07-05: image/video Page의 `label`(라벨, 기본값은 업로드 시
+   * 원본 파일명)을 표시한다 — 이전엔 `(video)`/`(image)`로만 나와서
+   * CueList만 보고는 어떤 미디어인지 알 수 없었다(클릭해봐야 확인
+   * 가능). 텍스트 오버레이(9-7)가 있으면 라벨 뒤에 첫 줄을 덧붙인다 —
+   * 두 정보 다 CueList 미리보기로 노출해야 하는 것이라 함께 처리한다.
+   */
   function getPreviewText(page) {
     if (page.type === 'text') {
       return page.text?.split('\n')[0] ?? '(빈 페이지)'
     }
-    return `(${page.type})`
+
+    const base = page.label || `(${page.type})`
+    if (page.text) {
+      return `${base} — ${page.text.split('\n')[0]}`
+    }
+    return base
   }
 }
