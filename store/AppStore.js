@@ -29,7 +29,7 @@
  *     Subscriber가 등록되어 있는지 신경 쓰지 않는다.
  */
 
-import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, sanitizePresentation, addSection, removeSection, replaceSection, getSectionRanges as getPresentationSectionRanges } from '../domain/Presentation.js'
+import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, movePageToSection, setPagePositionAndSection, sanitizePresentation, addSection, removeSection, replaceSection, getSectionGroups as getPresentationSectionGroups } from '../domain/Presentation.js'
 import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
 import { migrateSnapshot } from '../persistence/Schema.js'
 import { load as storageLoad } from '../persistence/StorageAdapter.js'
@@ -135,8 +135,13 @@ function deriveMutations(actionType, prev, next) {
 
   const pagesChanged =
     prev.presentation.pages !== next.presentation.pages
+  // D-Editor-4(2026-07-06): sections[] 단일 배열 대신 sectionIds[](순서)와
+  // sectionMap{}(저장소) 두 곳을 각각 참조가 바뀌었는지로 판정한다. 둘 중
+  // 하나만 바뀌어도(예: title만 수정 → sectionMap만 바뀜, sectionIds는
+  // 그대로) SET_SECTIONS를 발동시켜야 하므로 OR로 묶는다.
   const sectionsChanged =
-    prev.presentation.sections !== next.presentation.sections
+    prev.presentation.sectionIds !== next.presentation.sectionIds ||
+    prev.presentation.sectionMap !== next.presentation.sectionMap
   const titleChanged =
     prev.presentation.title !== next.presentation.title
   const selectionChanged =
@@ -247,6 +252,25 @@ function reduce(state, action) {
         presentation: movePage(state.presentation, action.fromIndex, action.toIndex),
       }
 
+    // D-Editor-4(2026-07-06): Page를 다른 Section으로 명시적으로 옮긴다
+    // (sectionId 변경 + 대상 Section 끝으로 위치 재배치, 규칙 1).
+    // 순수 위치 이동(드래그 재정렬)은 MOVE_PAGE를 그대로 쓴다 — 그쪽은
+    // movePage()의 자동 흡수(규칙 5)가 sectionId를 알아서 재계산한다.
+    case 'MOVE_PAGE_TO_SECTION':
+      return {
+        ...state,
+        presentation: movePageToSection(state.presentation, action.pageId, action.sectionId),
+      }
+
+    // history/HistoryManager.js 전용 — MOVE_PAGE_TO_SECTION의 정확한 Undo를
+    // 위해서만 쓴다(위치+sectionId 동시 복원). 일반 편집 흐름에서 직접
+    // dispatch하지 않는다(INSERT_PAGE_AT과 동일한 성격 — D-018 참조).
+    case 'SET_PAGE_POSITION':
+      return {
+        ...state,
+        presentation: setPagePositionAndSection(state.presentation, action.pageId, action.index, action.sectionId),
+      }
+
     case 'INSERT_PAGE_AT':
       // D-018 / History: REMOVE_PAGE Undo 전용. 일반 편집 흐름에서는 사용하지 않는다.
       return {
@@ -260,7 +284,7 @@ function reduce(state, action) {
         presentation: { ...state.presentation, title: action.title },
       }
 
-    // ── Section (FutureEditor.md D-Editor-1~3) ──
+    // ── Section (FutureEditor.md D-Editor-4) ──
 
     case 'ADD_SECTION':
       return {
@@ -336,10 +360,11 @@ export function getLivePage() {
 }
 
 /**
- * Section별 담당 Page 구간을 계산해 반환한다(CueList Outline 표시용).
- * domain/Presentation.js의 getSectionRanges 참조 — 매번 pages/sections로부터
- * 새로 계산되는 파생 값이며 Store에 저장되지 않는다.
+ * Flow View 렌더링용 Section 그룹을 계산해 반환한다(CueList 표시용).
+ * domain/Presentation.js의 getSectionGroups 참조(D-Editor-4, 기존
+ * getSectionRanges 대체) — 매번 pages/sectionMap으로부터 새로 계산되는
+ * 파생 값이며 Store에 저장되지 않는다.
  */
-export function getSectionRanges() {
-  return getPresentationSectionRanges(state.presentation)
+export function getSectionGroups() {
+  return getPresentationSectionGroups(state.presentation)
 }
