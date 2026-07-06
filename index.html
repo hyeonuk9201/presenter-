@@ -874,6 +874,12 @@
     execute({
       type: 'ADD_SECTION',
       payload: { section: createSection({ title: title || '섹션' }) },
+    }).catch(err => {
+      // execute()는 await 없이 fire-and-forget으로 호출되므로, 내부에서
+      // 에러가 나면 원래 아무 표시 없이 조용히 실패한다(Unhandled Promise
+      // Rejection으로만 콘솔에 남고 화면엔 안 보임) — 진단을 위해 명시적으로
+      // 콘솔에 찍는다(2026-07-06, 실사용 중 "버튼이 안 먹는다" 신고 대응).
+      console.error('[Section 추가 실패]', err)
     })
   })
 
