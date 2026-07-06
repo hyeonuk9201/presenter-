@@ -11,7 +11,7 @@
  * 아니라 state.presenterState.appMode 기반으로 동작한다.
  */
 
-import { subscribe, getState, getSectionRanges } from '../store/AppStore.js'
+import { subscribe, getState, getSectionGroups } from '../store/AppStore.js'
 import { execute } from '../command/CommandBus.js'
 
 export function createCueList(containerEl) {
@@ -22,7 +22,7 @@ export function createCueList(containerEl) {
 
   // ── 렌더링 ───────────────────────────────
   function render(state) {
-    const { pages, sections } = state.presentation
+    const { pages, sectionMap } = state.presentation
     const { selectedPageId, livePageId } = state.presenterState
 
     // Step6(2026-06-27): text뿐 아니라 mediaId까지 fingerprint에 포함한다.
@@ -30,13 +30,15 @@ export function createCueList(containerEl) {
     // 항상 undefined라 mediaId가 바뀌어도(미디어 교체) 변경 감지가 안 될
     // 수 있었다 — type과 mediaId를 추가해 그 경우도 감지하게 한다.
     //
-    // 9-13(2026-07-03): sections도 fingerprint에 포함한다 — Section
-    // 추가/삭제/제목/색상/접기 상태가 바뀌면 구조 자체(Section Tree)가
-    // 달라지므로 다시 그려야 한다. pages 변경 감지 로직과 별개 관심사라
-    // 이름은 pagesChanged로 유지하되 실제로는 "다시 그려야 하는가"를 뜻한다.
-    const pagesFingerprint = pages.map(p => `${p.id}:${p.type}:${p.text}:${p.mediaId}:${p.label}`).join('|')
-    const sectionsFingerprint = sections
-      .map(s => `${s.id}:${s.title}:${s.collapsed}:${s.color}:${s.startPageId}`)
+    // D-Editor-4(2026-07-06): sections[] 배열 대신 Page 각각의 sectionId를
+    // fingerprint에 포함한다 — Page 소속이 바뀌는 것 자체가 이제 Page
+    // 필드 변경이기 때문이다(Section 쪽 anchor가 움직이던 옛 모델과 달리,
+    // Section 메타데이터 변경은 sectionMap 쪽만 봐도 충분하다).
+    const pagesFingerprint = pages
+      .map(p => `${p.id}:${p.type}:${p.text}:${p.mediaId}:${p.label}:${p.sectionId}`)
+      .join('|')
+    const sectionsFingerprint = Object.values(sectionMap)
+      .map(s => `${s.id}:${s.title}:${s.collapsed}:${s.color}`)
       .join('|')
     const currentFingerprint = `${pagesFingerprint}::${sectionsFingerprint}`
     const pagesChanged = currentFingerprint !== lastFingerprint
@@ -61,60 +63,52 @@ export function createCueList(containerEl) {
   }
 
   /**
-   * Section Tree 렌더링(9-13 도메인 모델 위에 UI 추가, GPT 설계 원칙 반영).
-   * "CueList는 Page List가 아니라 Section Tree를 지향한다" — Section이
-   * 없으면(sections:[] — 대부분의 기존 프로젝트) 그냥 flat하게, Page
-   * 번호는 항상 전체 순서 기준 전역 번호를 쓴다(Section별로 1번부터
+   * Section Tree 렌더링(D-Editor-4, 2026-07-06 — getSectionRanges/Range
+   * 모델 대체). "CueList는 Page List가 아니라 Section Tree를 지향한다"는
+   * 원칙은 그대로다. getSectionGroups()가 pages[](Live Order) 순서를
+   * 그대로 훑으면서 연속된 같은 sectionId를 하나의 그룹으로 묶어 반환한다
+   * — sectionId: null인 그룹도 "미분류" 그룹으로 자연스럽게 나온다(옛
+   * 모델처럼 "첫 Section 이전"으로 위치가 고정되지 않고, pages[] 안
+   * 어디에서든 나타날 수 있다 — Page 중심 모델의 자연스러운 결과).
+   * Page 번호는 항상 전체 순서 기준 전역 번호를 쓴다(Section별로 1번부터
    * 다시 세지 않는다 — Page는 여전히 송출 가능한 최소 단위이므로).
    */
   function renderTree(state) {
-    const { pages } = state.presentation
-    const ranges = getSectionRanges()
+    const groups = getSectionGroups()
     let globalIndex = 0
 
-    if (ranges.length === 0) {
-      pages.forEach(page => {
-        containerEl.appendChild(createCueItem(page, globalIndex++))
-      })
-      return
-    }
+    groups.forEach(group => {
+      if (group.sectionId === null) {
+        // 미분류 구간. QA 피드백(2026-07-04)에서 확인된 대로, Section
+        // Header와 대비되는 non-collapsible 라벨을 붙인다 — 접기 기능은
+        // 없다(접을 대상이 되는 Section 자체가 아니므로).
+        const unsectionedLabel = document.createElement('div')
+        unsectionedLabel.className = 'cue-unsectioned-label'
+        unsectionedLabel.textContent = '미분류'
 
-    // 첫 Section 시작 이전(미분류) Page.
-    // QA 피드백(2026-07-04): "Section에 포함 안된 Page와 포함된 Page의
-    // 정렬 순위가 같아서 구분이 안 된다" — 원래는 헤더 없이 그냥
-    // 나열하도록 의도했지만(Section Tree UI 설계 당시 최소 구현), Page
-    // 번호가 전역 연속 번호를 쓰다 보니 소속 여부를 구분할 시각적 단서가
-    // 전혀 없었다. Section Header와 대비되는 non-collapsible 라벨을
-    // 추가해 "이 구간은 어느 Section에도 속하지 않는다"를 명시한다 —
-    // 접기 기능은 없다(접을 대상이 되는 Section 자체가 아니므로).
-    const firstStartIndex = pages.findIndex(p => p.id === ranges[0].startPageId)
-    if (firstStartIndex > 0) {
-      const unsectionedLabel = document.createElement('div')
-      unsectionedLabel.className = 'cue-unsectioned-label'
-      unsectionedLabel.textContent = '미분류'
+        const unsectioned = document.createElement('div')
+        unsectioned.className = 'cue-unsectioned'
+        group.pages.forEach(page => {
+          unsectioned.appendChild(createCueItem(page, globalIndex++))
+        })
 
-      const unsectioned = document.createElement('div')
-      unsectioned.className = 'cue-unsectioned'
-      for (let i = 0; i < firstStartIndex; i++) {
-        unsectioned.appendChild(createCueItem(pages[i], globalIndex++))
+        containerEl.appendChild(unsectionedLabel)
+        containerEl.appendChild(unsectioned)
+      } else {
+        containerEl.appendChild(createSectionGroup(group, globalIndex))
+        globalIndex += group.pages.length
       }
-      containerEl.appendChild(unsectionedLabel)
-      containerEl.appendChild(unsectioned)
-    }
-
-    ranges.forEach(range => {
-      containerEl.appendChild(createSectionGroup(range, globalIndex))
-      globalIndex += range.pages.length
     })
   }
 
   // ── Section 그룹 DOM 생성 ────────────────
-  function createSectionGroup(range, startGlobalIndex) {
-    // range는 getSectionRanges()가 만든 { ...section, pages: [...] } 형태.
-    // pages는 이 함수 렌더링에만 쓰는 계산된 값이라, Section 자체를
-    // UPDATE_SECTION으로 되돌려보낼 때는 반드시 떼어내야 한다 — 안 그러면
-    // Section 도메인 객체에 스냅샷이 섞여 저장된다.
-    const { pages: sectionPages, ...section } = range
+  function createSectionGroup(sectionGroup, startGlobalIndex) {
+    // sectionGroup은 getSectionGroups()가 만든 { sectionId, section, pages }
+    // 형태. section이 sectionMap 조회 실패로 null이면(정상 경로에서는
+    // 발생하지 않아야 함 — sanitizePresentation이 참조 무결성을 보장)
+    // 방어적으로 대체값을 쓴다.
+    const section = sectionGroup.section ?? { id: sectionGroup.sectionId, title: '(알 수 없는 Section)', note: '', collapsed: false, color: null }
+    const sectionPages = sectionGroup.pages
 
     const group = document.createElement('div')
     group.className = 'cue-section'
