@@ -17,6 +17,13 @@ import { execute } from '../command/CommandBus.js'
 export function createCueList(containerEl) {
   let lastFingerprint = ''
 
+  // 드래그 재정렬(2026-07-06). dataTransfer.getData()는 일부 브라우저에서
+  // dragover 시점에 못 읽는 경우가 있어(보안 정책상 drop에서만 확정적으로
+  // 읽힘), 신뢰 가능한 소스는 이 모듈 스코프 변수로 따로 들고 다닌다.
+  // dataTransfer 쪽 설정은 표준 API 준수를 위한 것일 뿐, 실제 로직은
+  // 이 변수를 본다.
+  let draggedPageId = null
+
   render(getState())
   subscribe(({ state }) => render(state))
 
@@ -85,6 +92,27 @@ export function createCueList(containerEl) {
         const unsectionedLabel = document.createElement('div')
         unsectionedLabel.className = 'cue-unsectioned-label'
         unsectionedLabel.textContent = '미분류'
+
+        // 미분류 라벨에 드롭 → sectionId: null로 되돌린다(2026-07-06).
+        // Section 헤더 드롭과 대칭되는 동작 — "이 Page를 어느 Section에도
+        // 안 속하게" 하는 유일한 명시적 진입점.
+        unsectionedLabel.addEventListener('dragover', (e) => {
+          if (!draggedPageId) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          unsectionedLabel.classList.add('drag-over')
+        })
+        unsectionedLabel.addEventListener('dragleave', () => {
+          unsectionedLabel.classList.remove('drag-over')
+        })
+        unsectionedLabel.addEventListener('drop', (e) => {
+          e.preventDefault()
+          unsectionedLabel.classList.remove('drag-over')
+          const sourceId = draggedPageId
+          draggedPageId = null
+          if (!sourceId) return
+          execute({ type: 'MOVE_PAGE_TO_SECTION', payload: { pageId: sourceId, sectionId: null } })
+        })
 
         const unsectioned = document.createElement('div')
         unsectioned.className = 'cue-unsectioned'
@@ -162,6 +190,28 @@ export function createCueList(containerEl) {
       })
     })
 
+    // 헤더에 직접 드롭 → 그 Section으로 즉시 배정(2026-07-06). 특히 Page가
+    // 하나도 없는 빈 Section은 위치 기반 드롭(cue-item끼리의 drop)으로는
+    // 애초에 드롭할 대상 자체가 없어서 접근 불가능하다 — 헤더가 그 유일한
+    // 진입점이다.
+    header.addEventListener('dragover', (e) => {
+      if (!draggedPageId) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      header.classList.add('drag-over')
+    })
+    header.addEventListener('dragleave', () => {
+      header.classList.remove('drag-over')
+    })
+    header.addEventListener('drop', (e) => {
+      e.preventDefault()
+      header.classList.remove('drag-over')
+      const sourceId = draggedPageId
+      draggedPageId = null
+      if (!sourceId) return
+      execute({ type: 'MOVE_PAGE_TO_SECTION', payload: { pageId: sourceId, sectionId: section.id } })
+    })
+
     const pagesEl = document.createElement('div')
     pagesEl.className = 'cue-section-pages'
     sectionPages.forEach((page, i) => {
@@ -178,6 +228,7 @@ export function createCueList(containerEl) {
     const item = document.createElement('div')
     item.className = 'cue-item'
     item.dataset.pageId = page.id
+    item.draggable = true
 
     const num = document.createElement('div')
     num.className = 'cue-number'
@@ -205,6 +256,62 @@ export function createCueList(containerEl) {
     item.appendChild(preview)
     item.appendChild(type)
     item.appendChild(del)
+
+    // ── 드래그 재정렬(2026-07-06) ──────────
+    // movePage()의 자동 흡수(D-Editor-4 규칙 5)가 sectionId 재계산을
+    // 알아서 처리하므로, 여기서는 순수 위치(index) 이동만 신경 쓰면 된다
+    // — 다른 Section 범위 안으로 드롭하면 그 Section 소속으로 자동 편입.
+    item.addEventListener('dragstart', (e) => {
+      draggedPageId = page.id
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', page.id) // 표준 API 준수용(실제 로직은 draggedPageId를 본다)
+      item.classList.add('is-dragging')
+    })
+
+    item.addEventListener('dragend', () => {
+      item.classList.remove('is-dragging')
+      clearDragOverIndicators()
+      draggedPageId = null
+    })
+
+    item.addEventListener('dragover', (e) => {
+      if (!draggedPageId || draggedPageId === page.id) return
+      e.preventDefault() // drop을 허용하려면 반드시 필요
+      e.dataTransfer.dropEffect = 'move'
+
+      const rect = item.getBoundingClientRect()
+      const isTopHalf = e.clientY < rect.top + rect.height / 2
+      clearDragOverIndicators()
+      item.classList.add(isTopHalf ? 'drag-over-top' : 'drag-over-bottom')
+    })
+
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('drag-over-top', 'drag-over-bottom')
+    })
+
+    item.addEventListener('drop', (e) => {
+      e.preventDefault()
+      e.stopPropagation() // Section 헤더/미분류 라벨의 drop 핸들러로 전파 방지
+      const insertBefore = item.classList.contains('drag-over-top')
+      clearDragOverIndicators()
+
+      const sourceId = draggedPageId
+      draggedPageId = null
+      if (!sourceId || sourceId === page.id) return
+
+      const { pages } = getState().presentation
+      const fromIndex = pages.findIndex(p => p.id === sourceId)
+      const targetIndex = pages.findIndex(p => p.id === page.id)
+      if (fromIndex === -1 || targetIndex === -1) return
+
+      // 원본 배열 기준 "여기에 넣고 싶다"는 위치를 먼저 정하고, 그 다음
+      // movePage()의 splice 의미(제거 → 그 뒤 배열에 삽입)에 맞게 보정한다.
+      const desiredOriginalPos = insertBefore ? targetIndex : targetIndex + 1
+      const toIndex = desiredOriginalPos > fromIndex ? desiredOriginalPos - 1 : desiredOriginalPos
+      if (toIndex === fromIndex) return
+
+      execute({ type: 'MOVE_PAGE', payload: { fromIndex, toIndex } })
+    })
 
     del.addEventListener('click', (e) => {
       e.stopPropagation() // 아이템 클릭(SELECT) 전파 차단
@@ -248,6 +355,15 @@ export function createCueList(containerEl) {
     })
 
     return item
+  }
+
+  function clearDragOverIndicators() {
+    containerEl.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach(el => {
+      el.classList.remove('drag-over-top', 'drag-over-bottom')
+    })
+    containerEl.querySelectorAll('.cue-section-header.drag-over, .cue-unsectioned-label.drag-over').forEach(el => {
+      el.classList.remove('drag-over')
+    })
   }
 
   function createEmptyMessage() {
