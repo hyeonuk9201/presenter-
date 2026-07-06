@@ -241,3 +241,28 @@
   flex-direction: column;
   gap: 4px;
 }
+
+/* ── 드래그 재정렬 (2026-07-06) ──────────────
+ * cue-item: 잡는 느낌(grab cursor) + 드래그 중 반투명.
+ * drag-over-top/bottom: 어디에 놓일지 미리 보여주는 삽입선.
+ * Section 헤더/미분류 라벨의 drag-over: 통짜 배경 하이라이트로
+ *   "여기에 놓으면 이 그룹으로 들어간다"는 걸 표현(삽입선과는 다른
+ *   의미라 시각적으로도 구분). */
+.cue-item {
+  cursor: grab;
+}
+.cue-item.is-dragging {
+  opacity: 0.4;
+}
+.cue-item.drag-over-top {
+  box-shadow: inset 0 2px 0 0 var(--accent-blue, #4a9eff);
+}
+.cue-item.drag-over-bottom {
+  box-shadow: inset 0 -2px 0 0 var(--accent-blue, #4a9eff);
+}
+
+.cue-section-header.drag-over,
+.cue-unsectioned-label.drag-over {
+  background: rgba(74,158,255,0.15);
+  border-radius: 4px;
+}

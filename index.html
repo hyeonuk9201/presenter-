@@ -511,6 +511,33 @@
       border-radius: 4px;
       border: 1px dashed var(--border);
     }
+    /* ── Toast (2026-07-06) ─────────────────
+     * Section 추가 성공 확인 메시지 등 비침습적 피드백용. alert()는 안 쓴다
+     * — 브라우저가 반복 대화상자를 감지하면 "이후 대화상자 차단"을 띄우는데,
+     * 실수로 체크하면 prompt()까지 같이 막혀버리는 문제가 실사용 중 발견됐다
+     * (TODO.md "Section 추가 버튼의 prompt() 취약점" 참조). 토스트는 대화상자가
+     * 아니라 그 문제와 무관하다. */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s, transform 0.15s;
+      z-index: 200;
+    }
+    .toast.is-visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
   </style>
 </head>
 <body>
@@ -644,6 +671,8 @@
   </div>
 </div>
 
+<div id="toast" class="toast"></div>
+
 <!-- 라이브러리 (2026-07-05, TODO.md 뼈대만 — 기능 없음) -->
 <div id="library-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
@@ -681,6 +710,21 @@
   import { createCueList } from './ui/CueList.js'
   import { createPreviewPanel } from './ui/PreviewPanel.js'
   import { createBroadcastOutput } from './output/BroadcastOutput.js'
+
+  // ── 토스트 알림 (2026-07-06, "Section 추가" 성공 피드백 부재 대응) ──
+  // alert()/confirm()/prompt() 같은 블로킹 대화상자는 쓰지 않는다 —
+  // 브라우저가 반복 호출을 감지하면 "추가 대화상자 차단" 체크박스를
+  // 띄우는데, 실수로 체크하면 그 뒤로 같은 종류의 대화상자가 전부
+  // 조용히 무시된다(TODO.md "Section 추가 버튼의 prompt() 취약점" 참조).
+  // 토스트는 대화상자가 아니라 그 문제와 무관하다.
+  let toastTimer = null
+  function showToast(message) {
+    const el = document.getElementById('toast')
+    el.textContent = message
+    el.classList.add('is-visible')
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2200)
+  }
 
   // Step6(2026-06-27, 실사용 버그 수정 → GPT 리뷰로 구조 개선):
   // localStorage에서 복원된 Page(AppStore.js 모듈 로드 시점에 이미
@@ -871,10 +915,38 @@
     const title = prompt('Section 제목', '섹션')
     if (title === null) return // 취소
 
-    execute({
-      type: 'ADD_SECTION',
-      payload: { section: createSection({ title: title || '섹션' }) },
-    })
+    const finalTitle = title || '섹션'
+    const section = createSection({ title: finalTitle })
+    // 2026-07-06: "Page를 선택하고 Section을 추가했는데 아무 반응이 없다"는
+    // 신고의 진짜 원인 — D-Editor-4 전환 후 이 버튼이 선택된 Page를 아예
+    // 안 봤다(제목만 있는 완전 독립 Section을 만들 뿐이었음). 토스트(9-20)로
+    // "생성은 됐다"는 피드백은 생겼지만, 선택했던 Page가 실제로 그 Section에
+    // 들어가는 동작 자체가 없었다 — 그게 원래 기대였을 테니 지금 추가한다.
+    const selectedPage = getSelectedPage()
+
+    execute({ type: 'ADD_SECTION', payload: { section } })
+      .then(() => {
+        if (!selectedPage) return
+        return execute({
+          type: 'MOVE_PAGE_TO_SECTION',
+          payload: { pageId: selectedPage.id, sectionId: section.id },
+        })
+      })
+      .then(() => {
+        if (selectedPage) {
+          showToast(`"${finalTitle}" Section이 추가되고 선택한 Page가 배정되었습니다.`)
+        } else {
+          showToast(`"${finalTitle}" Section이 추가되었습니다. Page를 이 Section에 배정하면 CueList에 나타납니다.`)
+        }
+      })
+      .catch(err => {
+        // execute()는 await 없이 fire-and-forget으로 호출되므로, 내부에서
+        // 에러가 나면 원래 아무 표시 없이 조용히 실패한다(Unhandled Promise
+        // Rejection으로만 콘솔에 남고 화면엔 안 보임) — 진단을 위해 명시적으로
+        // 콘솔에 찍는다(2026-07-06, 실사용 중 "버튼이 안 먹는다" 신고 대응).
+        console.error('[Section 추가 실패]', err)
+        showToast('Section 추가에 실패했습니다 — 콘솔을 확인해주세요.')
+      })
   })
 
   // ── 라이브러리 모달 (2026-07-05, 뼈대만 — 기능 없음) ──

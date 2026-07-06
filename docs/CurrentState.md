@@ -920,6 +920,42 @@ module script 문법 검사 통과.
 저장된 진짜 옛 데이터 기준), Section 추가/삭제/collapse 토글이 여전히
 매끄럽게 느껴지는지 확인 필요.
 
+## 9-20. Section 추가 성공 피드백 토스트 (2026-07-06, 이전 세션 할당량 초과로 중단된 작업 이어서 완료)
+
+### 배경
+9-19(D-Editor-4) 이후 실사용 중 "+ 섹션" 버튼이 안 먹는 것처럼 보인다는 신고 — 진단 결과 버그가 아니라 "성공은 하는데 Page가 배정 안 된 빈 Section이라 CueList에 그릴 게 없어서" 생긴 UX 공백이었다(빈 Section 14개가 실제로 생성되어 있었음, 사용자가 직접 localStorage에서 정리). 이전 세션이 원인 진단(`a39b12c` 디버그 커밋)과 해결 방향(토스트 알림)까지 정하고 토스트 CSS(`.toast`/`.toast.is-visible`)와 `<div id="toast">`까지 심어뒀으나, 실제로 띄우는 JS 함수를 작성하기 전에 세션이 중단됐다.
+
+### 구현
+`index.html`에 `showToast(message)` 함수 추가 — 텍스트 채우고 `.is-visible` 클래스 토글, 2.2초 후 자동 숨김. `alert()`/`confirm()`/`prompt()` 같은 블로킹 대화상자를 안 쓴 이유: TODO.md에 기록된 "Section 추가 버튼의 prompt() 취약점"(브라우저가 반복 대화상자를 감지하면 "차단" 체크박스를 띄우고, 실수로 체크하면 그 뒤로 조용히 무시됨)과 같은 문제를 새로 만들지 않기 위해서다.
+
+`add-section-btn` 핸들러의 `execute(...)`에 `.then()`을 추가해 성공 시 토스트로 안내("Page를 이 Section에 배정하면 CueList에 나타납니다" — 빈 Section이 안 보이는 게 정상 동작임을 알려줌), 기존 `.catch()`의 콘솔 에러 로깅에도 실패 토스트를 추가.
+
+### 변경 파일
+`index.html`
+
+### 검증
+`node --check`으로 임베디드 모듈 스크립트 구문 검사 통과. `execute()`가 Promise를 반환하는 것을 `command/CommandBus.js`에서 확인(`.then()`/`.catch()` 체이닝이 정상 동작할 근거). **브라우저 실사용 테스트 필요**: "+ 섹션" 클릭 → 제목 입력 → 하단에 토스트 메시지가 잠깐 떴다가 사라지는지.
+
+## 9-21. Section 자동 배정 + Page 드래그 재정렬 (2026-07-06, TODO.md Feature TODO 2건)
+
+### "+ 섹션" 자동 배정 (근본 원인 해결)
+9-20에서 진단했던 "Page 선택 후 Section 추가해도 반응 없음"의 진짜 원인 — D-Editor-4 전환 후 `add-section-btn` 핸들러가 선택된 Page를 아예 보지 않고 제목만 있는 완전 독립 Section을 만들고 있었다. `index.html`에서 `getSelectedPage()`로 선택된 Page를 확인해, 있으면 `ADD_SECTION` 성공 직후 `MOVE_PAGE_TO_SECTION`을 이어서 실행하도록 수정. 토스트 메시지도 배정 여부에 따라 분기(배정됨/배정 안 됨 안내).
+
+### Page 드래그 재정렬 (신규 기능)
+`ui/CueList.js`의 `createCueItem()`에 HTML5 Drag and Drop 추가:
+- `dragstart`/`dragend`: 드래그 중인 Page id를 모듈 스코프 변수(`draggedPageId`)로 추적 — `dataTransfer.getData()`가 `dragover` 시점에 못 읽히는 브라우저가 있어, 신뢰 가능한 소스를 따로 둠. `dataTransfer` 설정 자체는 표준 API 준수용으로 유지.
+- `dragover`: 커서 Y좌표로 대상 아이템의 위쪽 절반/아래쪽 절반 판정 → 삽입선(`drag-over-top`/`drag-over-bottom`) 표시.
+- `drop`: 원본 배열 기준 "여기 넣고 싶다"는 위치(`desiredOriginalPos`)를 먼저 정하고, `movePage()`의 splice 의미(제거 후 그 뒤 배열에 삽입)에 맞게 `fromIndex`와의 대소 비교로 `toIndex`를 보정 — Node로 6가지 시나리오(앞/뒤 삽입, 인접 이동, 방향 반대) 전부 검증 완료.
+- Section 헤더/미분류 라벨에도 `dragover`/`drop` 추가 — 빈 Section(내부에 Page가 하나도 없어 위치 기반 드롭 대상 자체가 없는 경우)에 접근할 유일한 진입점. `MOVE_PAGE_TO_SECTION`을 직접 호출.
+
+Section 경계를 넘나드는 위치 이동은 별도 처리 불필요 — `movePage()`의 자동 흡수(D-Editor-4 규칙 5, 9-19에서 구현)가 새 이웃 기준으로 `sectionId`를 알아서 재계산한다.
+
+### 변경 파일
+`index.html`, `ui/CueList.js`, `ui/cuelist.css`
+
+### 검증
+Node로 `movePage()`를 직접 호출해 6가지 재정렬 시나리오(앞으로/뒤로/인접/역방향 삽입) 결과 배열이 기대한 순서와 정확히 일치하는지 확인. `node --check`으로 `CueList.js`와 `index.html` 임베디드 모듈 스크립트 구문 검사 통과. **브라우저 실사용 테스트 필요**: Page 선택 후 "+ 섹션" → 자동 배정되는지, CueList에서 Page를 드래그해서 다른 Page 위/아래로 놓았을 때 순서가 바뀌는지, Section 헤더/미분류 라벨에 드롭했을 때 그 소속으로 바뀌는지, Undo(Ctrl+Z)로 위치+소속이 함께 복원되는지(9-19에서 이미 준비된 `SET_PAGE_POSITION` 활용 확인).
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
