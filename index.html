@@ -553,7 +553,7 @@
       <div id="cuelist-panel">
         <div class="panel-header">
           <span>순서</span>
-          <button id="add-section-btn" title="선택된 Page부터 새 Section 시작">+ 섹션</button>
+          <button id="add-section-btn" title="새 Section 추가(Page 없이도 생성 가능)">+ 섹션</button>
         </div>
         <div class="cue-list" id="cue-list-el"></div>
       </div>
@@ -860,28 +860,20 @@
     }
   })
 
-  // ── Section 추가 (9-13 도메인 모델 위에 최소 UI, 2026-07-03) ──
+  // ── Section 추가 (D-Editor-4, 2026-07-06 — 9-13 최소 UI 갱신) ──
   // "메뉴만 만들어놔도 좋다"는 스코프에 맞춰 prompt()로 제목만 받는
-  // 최소 구현. 색상/메모 편집 UI는 범위 밖(TODO.md에 등록).
+  // 최소 구현은 유지한다. 색상/메모 편집 UI는 범위 밖(TODO.md에 등록).
+  //
+  // D-Editor-4로 Section이 더 이상 startPageId(위치 앵커)를 갖지 않으므로,
+  // Page 없이도 정상적으로 존재할 수 있다(빈 Section) — "먼저 Page를
+  // 선택해야 한다"는 제약을 없앴다(Section Migration TODO 항목).
   document.getElementById('add-section-btn').addEventListener('click', () => {
-    const page = getSelectedPage()
-    if (!page) {
-      alert('먼저 CueList에서 Section을 시작할 Page를 선택하세요.')
-      return
-    }
-
-    const alreadyStart = getState().presentation.sections.some(s => s.startPageId === page.id)
-    if (alreadyStart) {
-      alert('이 Page는 이미 다른 Section의 시작점입니다.')
-      return
-    }
-
     const title = prompt('Section 제목', '섹션')
     if (title === null) return // 취소
 
     execute({
       type: 'ADD_SECTION',
-      payload: { section: createSection({ title: title || '섹션', startPageId: page.id }) },
+      payload: { section: createSection({ title: title || '섹션' }) },
     })
   })
 
