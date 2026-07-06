@@ -95,7 +95,8 @@ function save(presentation) {
     storageSave(STORAGE_KEY, JSON.stringify(withSchemaVersion({
       title: presentation.title,
       pages: presentation.pages,
-      sections: presentation.sections,
+      sectionIds: presentation.sectionIds,
+      sectionMap: presentation.sectionMap,
     })))
     setPersistenceState({
       isDirty: false,

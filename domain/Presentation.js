@@ -6,6 +6,14 @@
  * Presentation은 Page를 소유한다. (MVP 기준)
  * 미래에 Page Library가 생기면 pages[] → pageIds[] 전환 필요.
  * 그 시점에 이 파일과 AppStore만 수정하면 된다.
+ *
+ * Section 소속 모델(2026-07-06, D-Editor-4 — D-Editor-1/D-Editor-3 대체):
+ * Section은 더 이상 자신의 위치를 스스로 정의하지 않는다(startPageId
+ * 제거됨). 대신 Page가 `sectionId`로 직접 자신의 소속을 들고 있다.
+ * `pages[]`는 여전히 Live Order의 SSOT이고(변경 없음), `sectionIds[]`가
+ * Section 표시 순서의 새 SSOT, `sectionMap{}`이 Section 저장소다.
+ * 자세한 배경은 FutureEditor.md의 D-Editor-4, 논의 과정은
+ * Research/2026-07-04 Workflow Separation.md 참조.
  */
 
 import { generateId } from '../utils/id.js'
@@ -20,15 +28,19 @@ export function createPresentation({ title = '제목 없음' } = {}) {
   return {
     id: generateId(),
     title,
-    pages: [], // Page[] - MVP: 소유 구조
-                // Future: pageIds[] - Library 구조로 전환 가능
-    sections: [], // Section[] - Editor 개념(FutureEditor.md). Page를 그룹화만
-                   // 할 뿐 소유하지 않는다 — startPageId로 pages를 참조.
+    pages: [], // Page[] - MVP: 소유 구조. Live Order의 SSOT(변경 없음).
+               // Future: pageIds[] - Library 구조로 전환 가능
+    sectionIds: [], // Section 표시 순서 SSOT(D-Editor-4).
+    sectionMap: {}, // { [sectionId]: Section } - Section 저장소.
+    // 기본 Section을 자동으로 만들지 않는다 — "Page는 반드시 Section에
+    // 속한다"는 불변식은 채택하지 않기로 함(Research/2026-07-05 후속
+    // 논의: Browser/Flow 분리 관점에서 null을 정상 상태로 유지하는 쪽이
+    // 더 자연스럽다는 결론).
   }
 }
 
 // ─────────────────────────────────────────
-// 저장된 데이터 검증 (실사용 버그 대응, 2026-07-03)
+// 저장된 데이터 검증 (실사용 버그 대응, 2026-07-03 / D-Editor-4 갱신 2026-07-06)
 // ─────────────────────────────────────────
 
 /**
@@ -42,42 +54,69 @@ export function createPresentation({ title = '제목 없음' } = {}) {
  *   - raw 자체가 object가 아니거나 pages가 배열이 아니면 복구 불가 → null
  *     (호출부가 새 프로젝트로 폴백한다)
  *   - pages 배열 안에 개별적으로 손상된 Page가 섞여 있으면, 그 항목만
- *     제거하고 나머지는 그대로 살린다 — Page 하나 깨졌다고 전체 행사
- *     데이터를 날리지 않는다.
- *   - sections도 동일한 정책. 추가로, startPageId가 (검증 통과한) pages
- *     안에 없는 Section은 참조가 끊긴 것이므로 제외한다(2026-07-03, Section
- *     도입 시 함께 추가 — FutureEditor.md D-Editor-1).
+ *     제거하고 나머지는 그대로 살린다.
+ *   - sectionMap 안에 개별적으로 손상된 Section이 섞여 있으면 그 항목만
+ *     제외한다.
+ *
+ * 검증 방향 반전(2026-07-06, D-Editor-4): D-Editor-1 시절엔 "Section이
+ * 존재하는 Page를 가리키는가"(Section→Page)를 확인했지만, 이제는 소속
+ * 정보가 Page 쪽에 있으므로 "Page가 존재하는 Section을 가리키는가"
+ * (Page→Section)를 확인한다. 참조가 끊긴 경우 그 Page를 버리지 않고
+ * `sectionId: null`로 되돌린다(9-11 정책 재사용 — Page 하나가 가리키는
+ * Section이 사라졌다고 Page 자체를 잃을 이유는 없다).
  *
  * @param {unknown} raw
- * @returns {{ id: string, title: string, pages: object[], sections: object[] } | null}
+ * @returns {{ id: string, title: string, pages: object[], sectionIds: string[], sectionMap: object } | null}
  */
 export function sanitizePresentation(raw) {
   if (!raw || typeof raw !== 'object') return null
   if (!Array.isArray(raw.pages)) return null
 
-  const validPages = raw.pages.filter(page => {
-    const ok = isValidPage(page)
-    if (!ok) {
-      console.warn('[Presentation] 손상된 Page를 제외하고 복원함:', page)
+  // 1) Section 검증 (sectionMap 형태)
+  const rawSectionMap = (raw.sectionMap && typeof raw.sectionMap === 'object') ? raw.sectionMap : {}
+  const validSectionMap = {}
+  for (const [id, section] of Object.entries(rawSectionMap)) {
+    if (isValidSection(section) && section.id === id) {
+      validSectionMap[id] = section
+    } else {
+      console.warn('[Presentation] 손상된 Section을 제외하고 복원함:', section)
     }
-    return ok
-  })
+  }
 
-  const validPageIds = new Set(validPages.map(p => p.id))
-  const rawSections = Array.isArray(raw.sections) ? raw.sections : []
-  const validSections = rawSections.filter(section => {
-    const ok = isValidSection(section) && validPageIds.has(section.startPageId)
-    if (!ok) {
-      console.warn('[Presentation] 손상되었거나 참조가 끊긴 Section을 제외하고 복원함:', section)
-    }
+  // 2) sectionIds(순서 목록) 검증 — sectionMap에 없는 id는 제외,
+  //    반대로 sectionMap에는 있는데 목록에서 빠진 id는 방어적으로 뒤에 채운다.
+  const rawSectionIds = Array.isArray(raw.sectionIds) ? raw.sectionIds : []
+  const validSectionIds = rawSectionIds.filter(id => {
+    const ok = typeof id === 'string' && validSectionMap[id] !== undefined
+    if (!ok) console.warn('[Presentation] sectionMap에 없는 sectionId를 순서 목록에서 제외함:', id)
     return ok
   })
+  for (const id of Object.keys(validSectionMap)) {
+    if (!validSectionIds.includes(id)) validSectionIds.push(id)
+  }
+
+  // 3) Page 검증 + sectionId 참조 무결성(Page→Section 방향)
+  const validPages = raw.pages
+    .filter(page => {
+      const ok = isValidPage(page)
+      if (!ok) console.warn('[Presentation] 손상된 Page를 제외하고 복원함:', page)
+      return ok
+    })
+    .map(page => {
+      const sid = page.sectionId ?? null
+      if (sid !== null && !validSectionMap[sid]) {
+        console.warn('[Presentation] 존재하지 않는 Section을 가리키는 Page를 미분류로 되돌림:', page.id)
+        return { ...page, sectionId: null }
+      }
+      return page.sectionId === sid ? page : { ...page, sectionId: sid }
+    })
 
   return {
     id: typeof raw.id === 'string' ? raw.id : generateId(),
     title: typeof raw.title === 'string' ? raw.title : '제목 없음',
     pages: validPages,
-    sections: validSections,
+    sectionIds: validSectionIds,
+    sectionMap: validSectionMap,
   }
 }
 
@@ -94,57 +133,17 @@ export function addPage(presentation, page) {
 }
 
 /**
- * Section이 참조하는 Page가 사라졌을 때 정합성을 유지한다
- * (FutureEditor.md D-Editor-3).
+ * Page 삭제.
  *
- * 정책: startPageId가 가리키던 Page가 삭제되면, 삭제되기 전 순서 기준으로
- * "그 다음에 오는, 아직 남아있는 Page"로 시작점을 옮긴다. 그런 Page가
- * 하나도 없으면(그 Section 뒤에 남은 Page가 없음) Section 자체를 제거한다.
- *
- * 알려진 한계: 이 재조정은 REMOVE_PAGE의 Undo(INSERT_PAGE_AT)가 복원하지
- * 않는다 — Undo는 Page만 원래 위치로 되돌리고, 이 함수가 그 시점에 만든
- * Section 변경(재조정/삭제)까지는 되돌리지 않는다. Page 하나 삭제로 Section
- * 경계까지 매번 히스토리에 남기는 비용이 이 rare-case를 해결하는 것보다
- * 크다고 판단해 지금은 받아들인다. TODO.md에 등록.
- *
- * @param {object[]} sections - 삭제 전 sections
- * @param {object[]} oldPages - 삭제 전 pages (순서 판단 기준)
- * @param {string} removedPageId
- * @returns {object[]} 재조정된 sections
+ * D-Editor-4(2026-07-06): Page 중심 모델에서는 Section이 Page를 참조만
+ * 할 뿐 위치로 정의되지 않으므로, Page를 삭제해도 Section 쪽에는 아무
+ * 영향이 없다 — D-Editor-1 시절 필요했던 reconcileSectionsAfterPageRemoval()
+ * (앵커 Page 삭제 시 Section 경계 재조정)이 통째로 불필요해졌다.
  */
-function reconcileSectionsAfterPageRemoval(sections, oldPages, removedPageId) {
-  // 삭제되는 Page가 어떤 Section의 시작점도 아니면 sections는 그대로다.
-  // 참조를 그대로 반환해야 AppStore의 deriveMutations()가 불필요한
-  // SET_SECTIONS를 잘못 발동시키지 않는다(.map()은 내용이 같아도 항상 새
-  // 배열을 만들기 때문에, 여기서 조기 반환하지 않으면 Section과 무관한
-  // Page를 지울 때도 매번 SET_SECTIONS가 잘못 딸려온다).
-  const needsReconciliation = sections.some(s => s.startPageId === removedPageId)
-  if (!needsReconciliation) return sections
-
-  const remainingPageIds = new Set(
-    oldPages.filter(p => p.id !== removedPageId).map(p => p.id)
-  )
-
-  return sections
-    .map(section => {
-      if (section.startPageId !== removedPageId) return section
-
-      const oldIndex = oldPages.findIndex(p => p.id === removedPageId)
-      const nextSurviving = oldPages
-        .slice(oldIndex + 1)
-        .find(p => remainingPageIds.has(p.id))
-
-      return nextSurviving ? { ...section, startPageId: nextSurviving.id } : null
-    })
-    .filter(Boolean)
-}
-
-/** Page 삭제 */
 export function removePage(presentation, pageId) {
   return {
     ...presentation,
     pages: presentation.pages.filter(p => p.id !== pageId),
-    sections: reconcileSectionsAfterPageRemoval(presentation.sections, presentation.pages, pageId),
   }
 }
 
@@ -158,17 +157,38 @@ export function replacePage(presentation, updatedPage) {
   }
 }
 
-/** Page 순서 이동
- * Future: 드래그 재정렬 시 사용
+/**
+ * Page 순서 이동(같은 Section 안에서든 밖에서든, 순수 위치 이동).
+ * Future: 드래그 재정렬 시 사용.
  *
- * sections는 startPageId(참조)만 가지고 있어 손대지 않아도 된다 —
- * Page 위치가 바뀌면 getSectionRanges()가 다음 조회 시 자동으로 새
- * 위치를 반영한다(FutureEditor.md D-Editor-3, "위치가 곧 소속").
+ * 자동 흡수(D-Editor-4 규칙 5): 이 함수는 sectionId를 그대로 들고
+ * 옮기지 않는다 — 이동한 자리의 새 이웃(앞/뒤 Page) 기준으로 sectionId를
+ * 재계산한다. 그렇지 않으면 Section이 pages[] 안에서 여러 조각으로
+ * 파편화될 수 있다(Flow View에 같은 Section이 두 번 나타나는 문제,
+ * FutureEditor.md D-Editor-4 참조). Section을 명시적으로 바꾸는 이동은
+ * movePageToSection()을 쓴다 — 이 함수와 책임이 다르다.
  */
 export function movePage(presentation, fromIndex, toIndex) {
   const pages = [...presentation.pages]
   const [moved] = pages.splice(fromIndex, 1)
-  pages.splice(toIndex, 0, moved)
+
+  const safeToIndex = Math.max(0, Math.min(toIndex, pages.length))
+  const prevNeighbor = pages[safeToIndex - 1] ?? null
+  const nextNeighbor = pages[safeToIndex] ?? null
+
+  let newSectionId
+  if (prevNeighbor && nextNeighbor && prevNeighbor.sectionId === nextNeighbor.sectionId) {
+    newSectionId = prevNeighbor.sectionId
+  } else if (prevNeighbor) {
+    newSectionId = prevNeighbor.sectionId
+  } else if (nextNeighbor) {
+    newSectionId = nextNeighbor.sectionId
+  } else {
+    newSectionId = null // 유일한 Page였던 경우
+  }
+
+  const updatedMoved = { ...moved, sectionId: newSectionId }
+  pages.splice(safeToIndex, 0, updatedMoved)
   return { ...presentation, pages }
 }
 
@@ -177,6 +197,10 @@ export function movePage(presentation, fromIndex, toIndex) {
  * D-018 / History: REMOVE_PAGE의 Undo가 원래 위치를 정확히 복원하기 위한
  * 전용 연산이다. addPage(끝에 추가) + movePage(위치 이동) 두 단계로 하면
  * Mutation/Persistence가 불필요하게 두 번 발생하므로, 단일 연산으로 둔다.
+ *
+ * movePage()와 달리 sectionId 자동 흡수를 하지 않는다 — 삽입되는 Page는
+ * 이미 자신의 sectionId를 그대로 들고 온다(Undo가 삭제 당시의 sectionId를
+ * 정확히 복원해야 하므로, 이웃 기준 재계산으로 덮어쓰면 안 된다).
  */
 export function insertPageAt(presentation, page, index) {
   const pages = [...presentation.pages]
@@ -185,31 +209,109 @@ export function insertPageAt(presentation, page, index) {
   return { ...presentation, pages }
 }
 
-// ─────────────────────────────────────────
-// Section 조작 (FutureEditor.md D-Editor-1~3)
-// ─────────────────────────────────────────
+/**
+ * Page를 다른 Section으로 옮긴다(명시적 소속 변경, D-Editor-4 규칙 1).
+ * `sectionId`만 바꾸고 위치를 그대로 두면 Flow View의 그룹 표시와 실제
+ * 진행 순서가 어긋나므로, 대상 Section(targetSectionId, null 포함)의
+ * 마지막 Page 바로 뒤로 위치도 함께 옮긴다. 대상에 속한 Page가 하나도
+ * 없으면(빈 Section이거나, 미분류 구간이 아예 없는 경우) 배열 끝에
+ * 추가한다.
+ *
+ * @param {object} presentation
+ * @param {string} pageId
+ * @param {string|null} targetSectionId
+ */
+export function movePageToSection(presentation, pageId, targetSectionId) {
+  const { pages } = presentation
+  const pageIndex = pages.findIndex(p => p.id === pageId)
+  if (pageIndex === -1) return presentation
 
-/** Section 추가 */
-export function addSection(presentation, section) {
-  return { ...presentation, sections: [...presentation.sections, section] }
+  const page = pages[pageIndex]
+  const withoutPage = pages.filter(p => p.id !== pageId)
+
+  let insertIndex = withoutPage.length
+  for (let i = withoutPage.length - 1; i >= 0; i--) {
+    if (withoutPage[i].sectionId === targetSectionId) {
+      insertIndex = i + 1
+      break
+    }
+  }
+
+  const updatedPage = { ...page, sectionId: targetSectionId }
+  const newPages = [...withoutPage]
+  newPages.splice(insertIndex, 0, updatedPage)
+
+  return { ...presentation, pages: newPages }
 }
 
-/** Section 삭제 (Section만 제거 — 소속된 Page는 그대로 남고, 위쪽 Section 또는
- * "미분류" 구간으로 자연히 편입된다) */
-export function removeSection(presentation, sectionId) {
+/**
+ * Page의 위치와 Section 소속을 동시에, 정확한 값으로 되돌린다.
+ *
+ * D-Editor-4가 예고했던 "위치+소속을 함께 되돌리는 경로"(FutureEditor.md
+ * D-Editor-4 "잃는 것" 참조)가 실제로 필요해져서 추가한 Undo 전용 함수다
+ * — `MOVE_PAGE_TO_SECTION`의 Undo는 movePageToSection()을 거꾸로 호출하는
+ * 것만으로 부족하다(그건 "대상 Section의 끝"으로 보낼 뿐, 원래 있던
+ * 정확한 index로 복원하지 못한다). `insertPageAt()`도 못 쓴다 — 그 Page는
+ * 배열에서 없어진 적이 없고 자리만 옮겼을 뿐이라, 그대로 삽입하면 같은
+ * id가 배열에 중복된다.
+ *
+ * 그래서 이 함수는 "이미 배열 어딘가에 있는 Page를 제거 → 지정한 index에
+ * 지정한 sectionId로 재삽입"을 원자적으로 수행한다(history/HistoryManager.js
+ * 전용, 일반 편집 흐름에서는 movePage()/movePageToSection()을 쓴다).
+ */
+export function setPagePositionAndSection(presentation, pageId, index, sectionId) {
+  const current = presentation.pages.find(p => p.id === pageId)
+  if (!current) return presentation
+
+  const withoutPage = presentation.pages.filter(p => p.id !== pageId)
+  const updatedPage = { ...current, sectionId }
+  const safeIndex = Math.max(0, Math.min(index, withoutPage.length))
+  const newPages = [...withoutPage]
+  newPages.splice(safeIndex, 0, updatedPage)
+
+  return { ...presentation, pages: newPages }
+}
+
+// ─────────────────────────────────────────
+// Section 조작 (FutureEditor.md D-Editor-4)
+// ─────────────────────────────────────────
+
+/** Section 추가 (표시 순서 맨 뒤) */
+export function addSection(presentation, section) {
   return {
     ...presentation,
-    sections: presentation.sections.filter(s => s.id !== sectionId),
+    sectionIds: [...presentation.sectionIds, section.id],
+    sectionMap: { ...presentation.sectionMap, [section.id]: section },
   }
 }
 
-/** Section 교체 (title/note/collapsed/color/startPageId 등 내용 업데이트) */
+/**
+ * Section 삭제(D-Editor-4 규칙 3). 소속돼 있던 Page는 인접 Section에
+ * 병합하지 않고 `sectionId: null`(미분류)로 되돌린다 — "인접"의 정의가
+ * 애매해지고, 사용자가 예상 못 한 곳으로 Page가 옮겨가는 결과를 막기
+ * 위함(FutureEditor.md D-Editor-4 세부 규칙 3 그대로).
+ *
+ * "Presentation은 최소 1개 Section을 가져야 한다"는 불변식은 없으므로,
+ * 마지막 Section을 지워도 제한 없이 그대로 진행된다(Research/2026-07-05
+ * 후속 논의 결론).
+ */
+export function removeSection(presentation, sectionId) {
+  const { [sectionId]: _removed, ...remainingMap } = presentation.sectionMap
+  return {
+    ...presentation,
+    sectionIds: presentation.sectionIds.filter(id => id !== sectionId),
+    sectionMap: remainingMap,
+    pages: presentation.pages.map(p =>
+      p.sectionId === sectionId ? { ...p, sectionId: null } : p
+    ),
+  }
+}
+
+/** Section 교체 (title/note/collapsed/color 등 내용 업데이트) */
 export function replaceSection(presentation, updatedSection) {
   return {
     ...presentation,
-    sections: presentation.sections.map(s =>
-      s.id === updatedSection.id ? updatedSection : s
-    ),
+    sectionMap: { ...presentation.sectionMap, [updatedSection.id]: updatedSection },
   }
 }
 
@@ -226,31 +328,40 @@ export function getPageIndex(presentation, pageId) {
 }
 
 /**
- * Section들을 pages 배열 순서로 정렬하고, 각 Section이 담당하는 Page
- * 구간을 계산해서 반환한다. Section의 "끝"은 저장하지 않고 항상 이렇게
- * 계산한다(FutureEditor.md D-Editor-1) — 다음 Section의 시작 직전까지,
- * 마지막 Section은 배열 끝까지.
+ * Flow View 렌더링용 그룹 계산(D-Editor-4 규칙 4를 대체 — 기존
+ * getSectionRanges()를 이 함수가 대체한다).
  *
- * 이 함수는 Editor(CueList 등) 표현 전용이다. 계산 결과를 Store에 다시
- * 저장하지 않는다 — 매번 pages/sections로부터 다시 계산되는 파생 값이다.
+ * `pages[]`를 순서 그대로 훑으면서, 연속으로 같은 sectionId를 가진
+ * Page들을 하나의 그룹으로 묶는다. `sectionId: null`도 하나의 그룹으로
+ * 취급한다(미분류 구간 — Section이 아니라 표시상 "그룹 없음" 상태).
  *
- * @param {{ pages: object[], sections: object[] }} presentation
- * @returns {Array<{ id: string, title: string, note: string, collapsed: boolean, color: string|null, startPageId: string, pages: object[] }>}
+ * 렌더링 순서는 항상 pages[](Live Order) 기준이다(규칙 4) —
+ * `sectionIds`(Section 표시 순서 SSOT)는 여기서 쓰지 않는다. 두 순서가
+ * 어긋나 보일 수 있는 것 자체가 이 모델의 알려진 트레이드오프다
+ * (FutureEditor.md D-Editor-4 "잃는 것" 참조) — 대신 movePage()의 자동
+ * 흡수와 movePageToSection()의 위치 재배치가 항상 연속성(같은 Section이
+ * pages[] 안에서 조각나지 않는 것)을 지켜주는 것을 전제로 한다.
+ *
+ * @param {{ pages: object[], sectionMap: object }} presentation
+ * @returns {Array<{ sectionId: string|null, section: object|null, pages: object[] }>}
  */
-export function getSectionRanges(presentation) {
-  const { pages, sections } = presentation
-  if (!sections || sections.length === 0) return []
+export function getSectionGroups(presentation) {
+  const { pages, sectionMap } = presentation
+  const groups = []
+  let current = null
 
-  const withIndex = sections
-    .map(section => ({
-      section,
-      startIndex: pages.findIndex(p => p.id === section.startPageId),
-    }))
-    .filter(({ startIndex }) => startIndex !== -1) // 방어적 이중 안전장치 — sanitizePresentation이 이미 걸러냄
-    .sort((a, b) => a.startIndex - b.startIndex)
+  for (const page of pages) {
+    const sid = page.sectionId ?? null
+    if (!current || current.sectionId !== sid) {
+      current = {
+        sectionId: sid,
+        section: sid !== null ? (sectionMap[sid] ?? null) : null,
+        pages: [],
+      }
+      groups.push(current)
+    }
+    current.pages.push(page)
+  }
 
-  return withIndex.map(({ section, startIndex }, i) => {
-    const endIndex = i + 1 < withIndex.length ? withIndex[i + 1].startIndex : pages.length
-    return { ...section, pages: pages.slice(startIndex, endIndex) }
-  })
+  return groups
 }
