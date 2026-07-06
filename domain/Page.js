@@ -69,11 +69,19 @@ export function createTextPage({
   textShadow = false,
   transition,
   autoAdvance,
+  sectionId = null,
 } = {}) {
   return {
     // ── Identity ──────────────────────────
     id: generateId(),
     type: 'text',
+
+    // ── Grouping (2026-07-06, D-Editor-4) ──
+    // Page 중심 Section 소속 모델. null = 아직 어떤 Section에도 속하지
+    // 않음("미분류") — 예외 상태가 아니라 정상적으로 허용되는 값이다
+    // (FutureEditor.md D-Editor-4, Research/2026-07-05 후속 논의 참조:
+    // "Page는 반드시 Section에 속한다"는 불변식은 채택하지 않기로 함).
+    sectionId,
 
     // ── Content ───────────────────────────
     // 미래: page.content.text
@@ -117,7 +125,7 @@ export function createTextPage({
  *
  * @param {{ mediaId: string }} params
  */
-export function createImagePage({ mediaId, label = '', transition, autoAdvance } = {}) {
+export function createImagePage({ mediaId, label = '', transition, autoAdvance, sectionId = null } = {}) {
   if (!mediaId || typeof mediaId !== 'string') {
     throw new Error('[Page] createImagePage: mediaId는 필수 문자열이다')
   }
@@ -126,6 +134,9 @@ export function createImagePage({ mediaId, label = '', transition, autoAdvance }
     // ── Identity ──────────────────────────
     id: generateId(),
     type: 'image',
+
+    // ── Grouping (2026-07-06, D-Editor-4) ──
+    sectionId, // domain/Page.js의 createTextPage 주석 참조 — 동일한 의미
 
     // ── Content ───────────────────────────
     mediaId, // IndexedDB(MediaStore)에 저장된 Media 레코드 참조
@@ -162,7 +173,7 @@ export function createImagePage({ mediaId, label = '', transition, autoAdvance }
  *
  * @param {{ mediaId: string }} params
  */
-export function createVideoPage({ mediaId, label = '', transition, autoAdvance } = {}) {
+export function createVideoPage({ mediaId, label = '', transition, autoAdvance, sectionId = null } = {}) {
   if (!mediaId || typeof mediaId !== 'string') {
     throw new Error('[Page] createVideoPage: mediaId는 필수 문자열이다')
   }
@@ -171,6 +182,9 @@ export function createVideoPage({ mediaId, label = '', transition, autoAdvance }
     // ── Identity ──────────────────────────
     id: generateId(),
     type: 'video',
+
+    // ── Grouping (2026-07-06, D-Editor-4) ──
+    sectionId, // domain/Page.js의 createTextPage 주석 참조 — 동일한 의미
 
     // ── Content ───────────────────────────
     mediaId,
@@ -210,6 +224,14 @@ export function isValidPage(page) {
 
   if (page.type === 'image' || page.type === 'video') {
     if (!page.mediaId || typeof page.mediaId !== 'string') return false
+  }
+
+  // D-Editor-4(2026-07-06): sectionId는 string 또는 null만 허용.
+  // 존재하는 Section을 실제로 가리키는지는 여기서 검증하지 않는다 —
+  // 그건 Page 하나만 보고는 알 수 없고 Presentation 전체 맥락이
+  // 필요하므로 sanitizePresentation()의 책임이다(domain/Presentation.js).
+  if (page.sectionId !== null && page.sectionId !== undefined && typeof page.sectionId !== 'string') {
+    return false
   }
 
   return true
