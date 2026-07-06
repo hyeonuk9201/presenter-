@@ -142,6 +142,29 @@ function computeInverse(action, prevState) {
         label: 'Page 순서 변경',
       }
 
+    // D-Editor-4(2026-07-06): "위치+소속을 함께 되돌리는 경로가 필요해진다"는
+    // FutureEditor.md D-Editor-4의 예고가 실제로 필요해진 지점 — MOVE_PAGE의
+    // undo(fromIndex/toIndex 맞바꿈)만으로는 부족하다(sectionId까지 함께
+    // 바뀌었으므로). domain/Presentation.js의 setPagePositionAndSection()
+    // 전용 함수로 위치+sectionId를 원자적으로 복원한다.
+    case 'MOVE_PAGE_TO_SECTION': {
+      const index = prevState.presentation.pages.findIndex(p => p.id === action.pageId)
+      const before = prevState.presentation.pages[index]
+      if (index === -1 || !before) return null
+
+      return {
+        undoCommand: {
+          type: 'SET_PAGE_POSITION',
+          payload: { pageId: action.pageId, index, sectionId: before.sectionId },
+        },
+        redoCommand: {
+          type: 'MOVE_PAGE_TO_SECTION',
+          payload: { pageId: action.pageId, sectionId: action.sectionId },
+        },
+        label: 'Page를 다른 Section으로 이동',
+      }
+    }
+
     case 'SET_TITLE': {
       const before = prevState.presentation.title
       return {
