@@ -798,6 +798,128 @@ Node로 `createImagePage`/`createVideoPage`의 `label` 필드 생성 확인, `ge
 ### 브라우저 테스트 결과 (2026-07-05)
 Library 모달: 헤더 버튼 클릭 → 오픈, Songs/Backgrounds/Videos 3칸 "준비 중" 문구 확인, 닫기 버튼과 바깥 클릭 모두 정상 닫힘 확인. StorageAdapter: 평소처럼 편집 → 저장 → 새로고침 후 데이터 유지 확인(겉보기 동작 변화 없음, 내부 경로 재배선만 확인하는 성격이라 이걸로 충분). 둘 다 이상 없음.
 
+## 9-19. D-Editor-4 Section Migration 구현 (2026-07-06, TODO.md Section Migration TODO 전체)
+
+### 배경
+D-Editor-1(Range 모델, Section.startPageId 기반)을 D-Editor-4(Page 중심
+모델, Page.sectionId 역참조)로 전환하는 작업. D-Editor-4 자체는
+2026-07-04에 이미 결정됐지만 미구현 상태였고, 이후 Section 불변식 논의
+("Page는 반드시 Section에 속한다" 채택 여부)를 거치면서 최종적으로
+**원래 D-Editor-4 그대로(sectionId nullable, 기본 Section 자동 생성
+없음, 최소 1개 Section 불변식 없음)** 구현하기로 확정됐다(Research/
+2026-07-04 Workflow Separation.md 후속 논의 참조). 이번 세션은 그 확정된
+스펙을 실제 코드로 옮겼다.
+
+### 변경 사항
+
+**`domain/Section.js`**: `startPageId` 필드 완전 제거. Section은 이제
+순수 grouping metadata(title/note/collapsed/color)만 가진다. `isValidSection()`도 `startPageId` 검증 제거.
+
+**`domain/Page.js`**: `sectionId` 필드 추가(모든 Page 타입 생성 함수에
+`sectionId = null` 기본값). `isValidPage()`에 `sectionId`가 `string`
+또는 `null`(`undefined`도 관대하게 허용)인지 검증 추가.
+
+**`domain/Presentation.js`** (가장 큰 변경):
+- `sections: []` → `sectionIds: []`(표시 순서 SSOT) + `sectionMap: {}`
+  (저장소) 구조로 전환. `createPresentation()`은 기본 Section을 자동
+  생성하지 않는다.
+- `getSectionRanges()`/`reconcileSectionsAfterPageRemoval()` 완전 제거.
+  Page 중심 모델에서는 Page 삭제가 Section 쪽에 아무 영향을 주지 않으므로
+  (앵커 재조정 자체가 불필요해짐), `removePage()`가 훨씬 단순해졌다.
+- `getSectionGroups()` 신규 — `pages[]`를 순서대로 훑으면서 연속된 같은
+  `sectionId`를 그룹으로 묶는다(Flow View 렌더링용, 규칙 4). `sectionId:
+  null`도 하나의 그룹으로 자연스럽게 나온다 — 옛 모델처럼 "첫 Section
+  이전"으로 위치가 고정되지 않고 `pages[]` 안 어디서든 나타날 수 있다.
+- `movePageToSection()` 신규(규칙 1) — Section을 명시적으로 바꾸는 이동.
+  대상 Section의 마지막 Page 바로 뒤로 위치도 함께 옮긴다.
+- `movePage()`에 자동 흡수 로직 추가(규칙 5) — 순수 위치 이동(드래그
+  재정렬) 시 이동한 Page의 `sectionId`를 새 이웃 기준으로 재계산해서
+  Section이 `pages[]` 안에서 파편화되는 것을 막는다.
+- `removeSection()` — 소속 Page를 `sectionId: null`로 되돌린다(인접
+  병합 안 함, D-Editor-4 규칙 3 그대로). "최소 1개 Section" 불변식이
+  없으므로 마지막 Section을 지워도 제한이 없다.
+- `setPagePositionAndSection()` 신규 — Undo 전용. 위치와 sectionId를
+  동시에 정확한 값으로 복원한다(아래 HistoryManager 항목 참조).
+- `sanitizePresentation()` 검증 방향 반전 — D-Editor-1 시절엔 "Section이
+  존재하는 Page를 가리키는가"(Section→Page)를 확인했지만, 이제는
+  "Page가 존재하는 Section을 가리키는가"(Page→Section)를 확인한다.
+  참조가 끊긴 경우 9-11 정책 그대로 `sectionId: null`로 되돌리고 Page
+  자체는 잃지 않는다.
+
+**`store/AppStore.js`**: `deriveMutations()`의 `sectionsChanged` 판정을
+`sectionIds`/`sectionMap` 참조 변경 여부(OR 조합)로 갱신. `MOVE_PAGE_TO_SECTION`,
+`SET_PAGE_POSITION`(Undo 전용) 액션 추가. `getSectionRanges()` 래퍼를
+`getSectionGroups()`로 교체.
+
+**`history/HistoryManager.js`**: `MOVE_PAGE_TO_SECTION`의 `computeInverse()`
+케이스 추가. `MOVE_PAGE`처럼 fromIndex/toIndex만 맞바꾸는 걸로는 부족해서
+(sectionId까지 함께 바뀌므로) `setPagePositionAndSection()` 전용 함수로
+위치+sectionId를 원자적으로 복원하는 `SET_PAGE_POSITION` 액션을 Undo
+전용으로 새로 만들었다(D-Editor-4가 예고했던 "위치+소속을 함께 되돌리는
+경로" 요구사항).
+
+**`persistence/Schema.js`**: `CURRENT_SCHEMA_VERSION`을 2로 상향.
+`migrateV1toV2()` 추가 — 옛 v1 `sections[]`(startPageId 보유)를 예전
+Range 계산 로직으로 1회 재현해서 각 Page의 `sectionId`를 역산한다.
+참조 끊긴 Section(startPageId가 가리키는 Page가 없음)은 역산에서 제외.
+버전 필드 없는 데이터(2026-07-03 이전 실사용 데이터)도 v1으로 간주해서
+정상 마이그레이션된다.
+
+**`persistence/PersistenceSubscriber.js`**: 저장 필드를 `sections` →
+`sectionIds`/`sectionMap`으로 갱신.
+
+**`ui/CueList.js`**: `getSectionRanges()` 의존 제거, `getSectionGroups()`
+기반으로 `renderTree()`/`createSectionGroup()` 재작성. "미분류" 그룹
+렌더링이 이제 `pages[]` 어디에서든(첫 Section 이전뿐 아니라 Section
+사이/이후에도) 나타날 수 있다 — groupBy 결과를 그대로 따라가므로 Page
+중심 모델에서는 자연스러운 결과. fingerprint 계산도 `sectionMap`/
+`page.sectionId` 기준으로 갱신.
+
+**`index.html`**: "+ 섹션" 버튼이 더 이상 "선택된 Page 필요" 조건을
+요구하지 않는다 — Section이 Page 없이도(빈 Section) 정상 생성 가능해짐.
+
+### 범위 밖으로 남긴 것
+- Page 드래그 재정렬 UI(TODO.md에 별도 항목으로 존재) — 이번 세션은
+  도메인 함수(`movePage`/`movePageToSection`)만 만들었고, 실제 드래그
+  UI는 이 함수들 위에 나중에 얹는다.
+- 신규 Page 생성 시 기본 `sectionId`를 "현재 선택된 Section"으로 자동
+  지정하는 것 — 지금은 항상 `null`(미분류)로 생성된다. D-Editor-4 문서가
+  이미 "나중에 이동으로 고칠 수 있으니 급하지 않다"고 정리해둔 항목이라
+  그대로 유예.
+- Section 색상/메모 편집 UI, Section 순서 재정렬 UI — 기존 스코프
+  그대로 범위 밖.
+
+### 변경 파일
+`domain/Section.js`, `domain/Page.js`, `domain/Presentation.js`,
+`store/AppStore.js`, `history/HistoryManager.js`, `persistence/Schema.js`,
+`persistence/PersistenceSubscriber.js`, `ui/CueList.js`, `index.html`
+
+### 검증
+Node 스크립트로 3단계 검증:
+1. **도메인 단위 테스트**(14개) — Section 생성(startPageId 없음), Page
+   기본 sectionId, 기본 Section 미생성, addSection/removeSection(제한
+   없음, null 폴백), movePage 자동 흡수, movePageToSection 재배치,
+   setPagePositionAndSection 정확한 복원, removePage가 Section에 영향
+   없음, sanitizePresentation 방향 반전 3종, getSectionGroups 그룹핑
+   2종 — 전부 통과.
+2. **v1→v2 마이그레이션 테스트**(6개) — Range 구간대로 sectionId 역산,
+   Section 자체가 없던 옛 데이터, 참조 끊긴 Section 제외, v2 데이터
+   통과, 미래 버전 거부 — 전부 통과.
+3. **jsdom 통합 테스트**(7개) — Section 추가 시 Page 없으면 헤더 안
+   뜨는지, MOVE_PAGE_TO_SECTION으로 실제 이동+재배치, Header 클릭
+   collapse 토글(9-15 회귀 확인), Undo/Redo로 위치+sectionId 정확히
+   복원, REMOVE_SECTION(제한 없음), 저장 스냅샷 v2 형태 확인 — 전부
+   통과.
+
+`node --check`로 변경된 모든 `.js` 파일 및 `index.html`의 embedded
+module script 문법 검사 통과.
+
+**브라우저 실사용 테스트 필요**: 이번 마이그레이션은 자동화 테스트
+범위가 넓었지만, 실제 브라우저에서 v1(2026-07-05 이전) 저장 데이터를
+새로고침으로 불러왔을 때 마이그레이션이 실제로 동작하는지(localStorage에
+저장된 진짜 옛 데이터 기준), Section 추가/삭제/collapse 토글이 여전히
+매끄럽게 느껴지는지 확인 필요.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
