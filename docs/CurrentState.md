@@ -1034,6 +1034,28 @@ Node로 3개 시나리오 검증 — 선택된 Page 없을 때 `null` 확인, Pa
 열기 → 유령 Section에 "여기로 이동" 클릭 → CueList에 그 Section 헤더가
 비로소 나타나는지.
 
+## 9-24. Section 순서 위/아래 이동 (2026-07-06, 9-23 후속 — 이전 세션이 계획만 하고 미구현 상태로 중단됐던 작업)
+
+### 배경
+9-22/9-23으로 Section 목록을 보고 빈 Section에 Page를 배정할 수는 있게 됐지만, "Section 전체의 Flow 순서"를 바꾸는 방법이 없었다. 이전 세션이 `moveSectionGroup()` 설계와 구현 계획 전체를 대화로 설명했으나(Presentation.js/AppStore.js/HistoryManager.js/index.html 순서로 진행하겠다고 밝힘), 실제 도구 호출 없이(또는 호출 도중) 세션이 끊겨 코드베이스에는 아무 변경도 반영되지 않은 상태였다 — `grep`으로 전수 확인함(`moveSectionGroup`/`MOVE_SECTION_GROUP` 등 매치 없음). 이번 세션에서 계획을 그대로 유효하다고 판단해 처음부터 구현했다.
+
+### 구현
+**`domain/Presentation.js`**: `moveSectionGroup(presentation, sectionId, direction)` 추가. `getSectionGroups()`로 현재 그룹 목록을 얻어 대상 Section과 인접 그룹(`up`→이전, `down`→다음)을 찾아 통째로 맞바꾼다(`flatMap`으로 `pages[]` 재구성). 유령 Section(그룹 자체가 없음)이나 이미 끝에 있는 경우는 원본 `presentation` 참조를 그대로 반환(no-op, 참조 동일성 보존 — 불필요한 mutation 방지 원칙 재사용, 9-13에서 확립한 패턴). 맞바꾸는 두 그룹이 둘 다 실제 Section이면 `sectionIds`(표시 순서 SSOT)의 상대 순서도 함께 맞춰 두 값이 어긋나지 않게 한다.
+
+**`store/AppStore.js`**: `MOVE_SECTION_GROUP` 리듀서 케이스 추가.
+
+**`history/HistoryManager.js`**: `MOVE_SECTION_GROUP`의 Undo는 **방향만 반대로 다시 실행**하면 된다 — 인접 그룹 맞바꾸기는 자기 자신의 역연산이기 때문이다(A/B를 맞바꾼 뒤 같은 두 이웃을 다시 맞바꾸면 A/B로 복귀). `prevState` 참조 없이 `action.direction`만 뒤집는 가장 단순한 형태로 구현.
+
+**`index.html`**: Section 목록 모달의 각 행에 ▲/▼ 버튼 추가. 유령 Section이거나 이미 맨 위/맨 아래인 경우 비활성화(disabled) — 눌러도 아무 일 없는 버튼을 보여주는 대신 명확하게 막는다.
+
+### 변경 파일
+`domain/Presentation.js`, `store/AppStore.js`, `history/HistoryManager.js`, `index.html`
+
+### 검증
+Node로 도메인 함수 단독 테스트(정상 맞바꿈, `sectionIds` 동기화, 방향 반전으로 원본 복원, 유령/맨위/맨아래 3가지 no-op 케이스 — 전부 참조 동일성까지 확인) + 실제 `execute()`/`dispatch()`/`HistoryManager.undo/redo()`를 통한 전체 파이프라인 통합 테스트(Section 두 개 이동 → Undo → Redo까지 순서가 정확히 왕복하는지) 완료. `node --check`으로 전체 구문 검사 통과.
+
+**브라우저 실사용 테스트 필요**: "≡ 섹션" 모달에서 ▲/▼ 클릭 시 CueList의 Section 순서가 실제로 바뀌는지, 유령 Section/맨 위/맨 아래에서 버튼이 비활성화로 보이는지, Ctrl+Z로 순서가 되돌아가는지.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
