@@ -1075,9 +1075,14 @@
   // 안 보인다(getSectionGroups()가 pages[] 기준으로만 그룹을 만들기
   // 때문 — 의도된 동작, 9-19 참조). 실사용 중 이 상태의 Section이
   // 14개나 쌓였는데 사용자가 localStorage를 직접 열어봐야만 확인할 수
-  // 있었다. 이 모달은 sectionMap을 getSectionGroups()를 거치지 않고
-  // 직접 순회해서, Page가 0개인 Section("유령 Section")도 빠짐없이
-  // 보여주고 삭제할 수 있게 한다.
+  // 있었다. 이 모달은 sectionMap을 순회해서, Page가 0개인 Section
+  // ("유령 Section")도 빠짐없이 보여주고 삭제할 수 있게 한다.
+  //
+  // 정렬 기준(9-24 후속 수정, 2026-07-06): 처음엔 sectionIds(생성 순서)로
+  // 정렬했는데, ▲/▼ 버튼(9-24)은 Flow 순서(getSectionGroups)를 기준으로
+  // 움직여서 "버튼 눌러도 목록에서 안 움직이는 것처럼 보인다"는 문제가
+  // 있었다 — 지금은 목록도 Flow 순서로 그리고, Flow 안에 없는 유령
+  // Section만 맨 아래에 모은다(renderSectionList 내부 참조).
   const sectionListModal = document.getElementById('section-list-modal')
   const sectionListBody = document.getElementById('section-list-body')
 
@@ -1112,7 +1117,26 @@
       return
     }
 
-    sectionIds.forEach(id => {
+    // 목록 정렬 기준을 sectionIds(생성 순서)가 아니라 ▲/▼ 버튼이 실제로
+    // 조작하는 기준인 Flow 순서(getSectionGroups)로 맞춘다(2026-07-06,
+    // 실사용 피드백 — "화살표 방향으로 직관적으로 안 움직인다"). 원인:
+    // 두 기준이 서로 다른 순서라(D-Editor-4의 알려진 트레이드오프),
+    // moveSectionGroup()이 인접 그룹으로 미분류 블록을 만나면 sectionIds를
+    // 안 바꾸는 경우가 있어(코드 주석 참조) 버튼을 눌러도 sectionIds 순서로
+    // 그려지는 이 목록에서는 행이 그대로인 것처럼 보였다. 목록 자체를
+    // Flow 순서로 그리면 "지금 보이는 순서 = 버튼이 바꾸는 순서"가 항상
+    // 일치해서 어긋남이 원천적으로 사라진다.
+    //
+    // 유령 Section(Page 0개)은 pages[] 안에 그룹 자체가 없어 Flow 순서에
+    // 낄 자리가 없다 — sectionIds 순서 그대로 목록 맨 아래에 모아서 보여준다.
+    const flowGroups = getSectionGroups()
+    const flowSectionIds = flowGroups
+      .map(g => g.sectionId)
+      .filter(id => id !== null && sectionMap[id])
+    const ghostSectionIds = sectionIds.filter(id => !flowSectionIds.includes(id))
+    const orderedIds = [...flowSectionIds, ...ghostSectionIds]
+
+    orderedIds.forEach(id => {
       const section = sectionMap[id]
       if (!section) return // 방어적 — sanitizePresentation이 보장하지만 혹시 몰라 대비
 
@@ -1140,7 +1164,7 @@
       // 옮길 수 있으면 좋겠다"). 유령 Section(pages[] 안에 그룹 자체가 없음)은
       // moveSectionGroup()이 no-op으로 처리하지만, 애초에 눌러도 아무 일도
       // 안 일어나는 버튼을 보여주는 것보다 비활성화하는 쪽이 명확하다.
-      const groups = getSectionGroups()
+      const groups = flowGroups
       const groupIndex = groups.findIndex(g => g.sectionId === id)
       const canMoveUp = !isGhost && groupIndex > 0
       const canMoveDown = !isGhost && groupIndex !== -1 && groupIndex < groups.length - 1
