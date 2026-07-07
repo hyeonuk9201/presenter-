@@ -174,6 +174,26 @@ function computeInverse(action, prevState) {
       }
     }
 
+    // 2026-07-06: Section 전체(연속된 Page 블록) 순서 이동. 인접 그룹끼리의
+    // "맞바꾸기"는 자기 자신의 역연산이다 — 방향만 반대로 다시 실행하면
+    // 원래대로 돌아온다(A/B를 맞바꾼 뒤 같은 두 이웃을 다시 맞바꾸면 A/B로
+    // 복귀). prevState를 참조할 필요 없이 direction만 뒤집으면 된다.
+    //
+    // ADD_SECTION/REMOVE_SECTION/UPDATE_SECTION은 아직 History 기록 대상이
+    // 아니다(default:로 떨어져 null 반환됨) — 의도적 범위 제한
+    // (FutureEditor.md D-Editor-4 "아직 열려있는 것" 참조). MOVE_SECTION_GROUP만
+    // 먼저 지원하는 이유: Page 위치까지 실제로 바꾸는 유일한 Section
+    // 조작이라 실수로 되돌리기 어려운 결과(Flow 순서 변경)를 만들기
+    // 때문이다.
+    case 'MOVE_SECTION_GROUP': {
+      const inverseDirection = action.direction === 'up' ? 'down' : 'up'
+      return {
+        undoCommand: { type: 'MOVE_SECTION_GROUP', payload: { sectionId: action.sectionId, direction: inverseDirection } },
+        redoCommand: { type: 'MOVE_SECTION_GROUP', payload: { sectionId: action.sectionId, direction: action.direction } },
+        label: 'Section 순서 변경',
+      }
+    }
+
     // ── Selection / Live 계열: Ignore 정책 (Step5 실사용 후 확정) ──
     // HistoryArchitecture.md "Recording Policy / Ignore"와 동일한 결로 분류한다.
     // 결정 배경: Page 추가/삭제/수정은 "내용"이 바뀌는 작업이라 Undo 대상이

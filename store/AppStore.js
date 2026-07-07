@@ -29,7 +29,7 @@
  *     Subscriber가 등록되어 있는지 신경 쓰지 않는다.
  */
 
-import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, movePageToSection, setPagePositionAndSection, sanitizePresentation, addSection, removeSection, replaceSection, getSectionGroups as getPresentationSectionGroups } from '../domain/Presentation.js'
+import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, movePageToSection, setPagePositionAndSection, sanitizePresentation, addSection, removeSection, replaceSection, moveSectionGroup, getSectionGroups as getPresentationSectionGroups } from '../domain/Presentation.js'
 import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
 import { migrateSnapshot } from '../persistence/Schema.js'
 import { load as storageLoad } from '../persistence/StorageAdapter.js'
@@ -302,6 +302,16 @@ function reduce(state, action) {
       return {
         ...state,
         presentation: replaceSection(state.presentation, action.section),
+      }
+
+    // 2026-07-06: Section 전체(연속된 Page 블록)를 인접 그룹과 맞바꿔
+    // Flow 순서를 옮긴다. 유령 Section(Page 0개)이나 이미 맨 위/아래인
+    // 경우는 domain 함수가 no-op(같은 presentation 참조 반환)으로
+    // 처리하므로 여기서 따로 방어할 필요 없다.
+    case 'MOVE_SECTION_GROUP':
+      return {
+        ...state,
+        presentation: moveSectionGroup(state.presentation, action.sectionId, action.direction),
       }
 
     // ── PresenterState ────────────────────

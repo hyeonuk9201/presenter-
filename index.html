@@ -613,6 +613,26 @@
       border-color: var(--accent-danger);
       color: #fff;
     }
+    .section-list-move-btn {
+      font-size: 11px;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+    .section-list-move-btn:hover:not(:disabled) {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+    }
+    .section-list-move-btn:disabled {
+      color: var(--text-muted);
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -789,7 +809,7 @@
 <script type="module">
   import { createTextPage, createImagePage, createVideoPage } from './domain/Page.js'
   import { createSection } from './domain/Section.js'
-  import { getState, getSelectedPage, subscribe, registerSubscriber } from './store/AppStore.js'
+  import { getState, getSelectedPage, subscribe, registerSubscriber, getSectionGroups } from './store/AppStore.js'
   import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
   import { PersistenceSubscriber, onPersistenceStateChange } from './persistence/PersistenceSubscriber.js'
   import { HistoryHook, undo, redo, canUndo, canRedo } from './history/HistoryManager.js'
@@ -1115,6 +1135,46 @@
 
       const actions = document.createElement('div')
       actions.className = 'section-list-actions'
+
+      // 순서 이동(2026-07-06, 실사용 요청 — "Section 순서를 보고 위/아래로
+      // 옮길 수 있으면 좋겠다"). 유령 Section(pages[] 안에 그룹 자체가 없음)은
+      // moveSectionGroup()이 no-op으로 처리하지만, 애초에 눌러도 아무 일도
+      // 안 일어나는 버튼을 보여주는 것보다 비활성화하는 쪽이 명확하다.
+      const groups = getSectionGroups()
+      const groupIndex = groups.findIndex(g => g.sectionId === id)
+      const canMoveUp = !isGhost && groupIndex > 0
+      const canMoveDown = !isGhost && groupIndex !== -1 && groupIndex < groups.length - 1
+
+      const moveUpBtn = document.createElement('button')
+      moveUpBtn.className = 'section-list-move-btn'
+      moveUpBtn.textContent = '▲'
+      moveUpBtn.title = '위로 이동'
+      moveUpBtn.disabled = !canMoveUp
+      moveUpBtn.addEventListener('click', () => {
+        execute({ type: 'MOVE_SECTION_GROUP', payload: { sectionId: id, direction: 'up' } })
+          .then(() => renderSectionList())
+          .catch(err => {
+            console.error('[Section 순서 이동 실패]', err)
+            showToast('Section 순서 이동에 실패했습니다 — 콘솔을 확인해주세요.')
+          })
+      })
+
+      const moveDownBtn = document.createElement('button')
+      moveDownBtn.className = 'section-list-move-btn'
+      moveDownBtn.textContent = '▼'
+      moveDownBtn.title = '아래로 이동'
+      moveDownBtn.disabled = !canMoveDown
+      moveDownBtn.addEventListener('click', () => {
+        execute({ type: 'MOVE_SECTION_GROUP', payload: { sectionId: id, direction: 'down' } })
+          .then(() => renderSectionList())
+          .catch(err => {
+            console.error('[Section 순서 이동 실패]', err)
+            showToast('Section 순서 이동에 실패했습니다 — 콘솔을 확인해주세요.')
+          })
+      })
+
+      actions.appendChild(moveUpBtn)
+      actions.appendChild(moveDownBtn)
 
       // "여기로 이동" — 드래그로 접근할 수 없는 빈 Section(9-21은 CueList에
       // 헤더가 있어야 드롭 가능한데, 빈 Section은 애초에 헤더 자체가

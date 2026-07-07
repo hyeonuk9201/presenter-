@@ -315,6 +315,55 @@ export function replaceSection(presentation, updatedSection) {
   }
 }
 
+/**
+ * Section 전체(그 Section에 속한 연속된 Page 블록)를 Flow 순서(pages[])
+ * 안에서 앞/뒤 인접 그룹과 통째로 맞바꾼다(2026-07-06, 실사용 요청 —
+ * "Section 순서를 보고 위/아래로 옮길 수 있으면 좋겠다").
+ *
+ * 유령 Section(Page가 0개)은 pages[] 안에 그룹 자체가 없으므로
+ * (getSectionGroups() 참조) 이 함수로 옮길 대상이 되지 않는다 —
+ * groupIndex를 못 찾으면 그대로(no-op) 반환한다. 먼저 Page를 배정해야
+ * 순서 이동이 의미를 가진다.
+ *
+ * sectionIds(표시 순서 SSOT)도 가능한 한 함께 맞춘다 — 맞바꾸는 두 그룹이
+ * 둘 다 실제 Section(미분류 아님)일 때만 그 둘의 상대 순서를
+ * sectionIds 안에서도 맞바꾼다. 한쪽이 미분류(null) 그룹이면 sectionIds에
+ * 대응 항목이 없으므로 그 부분은 건드리지 않는다 — sectionIds와 pages[]
+ * 그룹 순서가 완전히 일치하지 않을 수 있다는 건 이미 알려진 트레이드오프
+ * (FutureEditor.md D-Editor-4 "잃는 것" 참조)이고, 이 함수는 "가능한
+ * 경우엔 맞춰준다" 정도로만 개선한다.
+ *
+ * @param {object} presentation
+ * @param {string} sectionId
+ * @param {'up'|'down'} direction
+ */
+export function moveSectionGroup(presentation, sectionId, direction) {
+  const groups = getSectionGroups(presentation)
+  const groupIndex = groups.findIndex(g => g.sectionId === sectionId)
+  if (groupIndex === -1) return presentation // 유령 Section — 이동 대상 없음
+
+  const neighborIndex = direction === 'up' ? groupIndex - 1 : groupIndex + 1
+  if (neighborIndex < 0 || neighborIndex >= groups.length) return presentation // 이미 끝
+
+  const newGroups = [...groups]
+  ;[newGroups[groupIndex], newGroups[neighborIndex]] = [newGroups[neighborIndex], newGroups[groupIndex]]
+  const newPages = newGroups.flatMap(g => g.pages)
+
+  const movedSectionId = groups[groupIndex].sectionId
+  const neighborSectionId = groups[neighborIndex].sectionId
+  let newSectionIds = presentation.sectionIds
+  if (movedSectionId !== null && neighborSectionId !== null) {
+    const a = presentation.sectionIds.indexOf(movedSectionId)
+    const b = presentation.sectionIds.indexOf(neighborSectionId)
+    if (a !== -1 && b !== -1) {
+      newSectionIds = [...presentation.sectionIds]
+      ;[newSectionIds[a], newSectionIds[b]] = [newSectionIds[b], newSectionIds[a]]
+    }
+  }
+
+  return { ...presentation, pages: newPages, sectionIds: newSectionIds }
+}
+
 // ─────────────────────────────────────────
 // 조회
 // ─────────────────────────────────────────
