@@ -568,6 +568,31 @@
     .section-list-row.is-ghost .section-list-count {
       color: var(--accent-danger);
     }
+    .section-list-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .section-list-assign-btn {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--accent-blue);
+      background: transparent;
+      color: var(--accent-blue);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .section-list-assign-btn:hover:not(:disabled) {
+      background: var(--accent-blue);
+      color: #fff;
+    }
+    .section-list-assign-btn:disabled {
+      border-color: var(--border);
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
     .section-list-delete-btn {
       flex-shrink: 0;
       font-size: 12px;
@@ -1047,6 +1072,18 @@
     const { sectionIds, sectionMap, pages } = getState().presentation
     sectionListBody.innerHTML = ''
 
+    // 선택된 Page 안내(2026-07-06, 빈 Section에 Page를 넣을 방법이
+    // 없다는 요청 대응) — CueList에서 Page를 먼저 선택한 뒤 이 모달에서
+    // 원하는 Section에 배정하는 흐름. "+ 섹션"의 자동 배정(9-21)과 같은
+    // 패턴을 재사용한다.
+    const selectedPage = getSelectedPage()
+    const hint = document.createElement('div')
+    hint.className = 'library-empty' // 기존 스타일 재사용(옅은 안내 박스)
+    hint.textContent = selectedPage
+      ? `선택된 Page: "${selectedPage.text ?? selectedPage.label ?? selectedPage.type}" — 아래에서 배정할 Section을 고르세요.`
+      : 'CueList에서 Page를 먼저 선택하면, 여기서 원하는 Section에 배정할 수 있습니다.'
+    sectionListBody.appendChild(hint)
+
     if (sectionIds.length === 0) {
       const empty = document.createElement('div')
       empty.className = 'library-empty'
@@ -1061,6 +1098,7 @@
 
       const pageCount = pages.filter(p => p.sectionId === id).length
       const isGhost = pageCount === 0
+      const alreadyHere = selectedPage && selectedPage.sectionId === id
 
       const row = document.createElement('div')
       row.className = 'section-list-row' + (isGhost ? ' is-ghost' : '')
@@ -1074,6 +1112,29 @@
       countEl.textContent = isGhost ? '비어있음 — 유령 Section' : `Page ${pageCount}개`
       info.appendChild(titleEl)
       info.appendChild(countEl)
+
+      const actions = document.createElement('div')
+      actions.className = 'section-list-actions'
+
+      // "여기로 이동" — 드래그로 접근할 수 없는 빈 Section(9-21은 CueList에
+      // 헤더가 있어야 드롭 가능한데, 빈 Section은 애초에 헤더 자체가
+      // 안 그려짐)에 Page를 넣는 유일한 경로. 선택된 Page가 없으면 버튼을
+      // 비활성화한다(어떤 Page를 옮길지 알 수 없으므로).
+      const assignBtn = document.createElement('button')
+      assignBtn.className = 'section-list-assign-btn'
+      assignBtn.textContent = alreadyHere ? '현재 위치' : '여기로 이동'
+      assignBtn.disabled = !selectedPage || alreadyHere
+      assignBtn.addEventListener('click', () => {
+        execute({ type: 'MOVE_PAGE_TO_SECTION', payload: { pageId: selectedPage.id, sectionId: id } })
+          .then(() => {
+            showToast(`선택한 Page를 "${section.title}" Section으로 옮겼습니다.`)
+            renderSectionList()
+          })
+          .catch(err => {
+            console.error('[Page 배정 실패]', err)
+            showToast('Page 배정에 실패했습니다 — 콘솔을 확인해주세요.')
+          })
+      })
 
       const deleteBtn = document.createElement('button')
       const isPending = pendingDeleteSectionId === id
@@ -1103,8 +1164,11 @@
         }
       })
 
+      actions.appendChild(assignBtn)
+      actions.appendChild(deleteBtn)
+
       row.appendChild(info)
-      row.appendChild(deleteBtn)
+      row.appendChild(actions)
       sectionListBody.appendChild(row)
     })
   }
