@@ -538,6 +538,56 @@
       opacity: 1;
       transform: translateX(-50%) translateY(0);
     }
+    /* ── Section 목록 모달 (2026-07-06) ──────
+     * "유령 섹션"(Page가 0개인 Section) 확인/삭제용. getSectionGroups()는
+     * pages[] 기준으로만 그룹을 만들어 빈 Section이 CueList에 전혀 안
+     * 보이므로, 이 모달은 sectionMap을 직접 순회해서 빠짐없이 보여준다. */
+    .section-list-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-raised);
+    }
+    .section-list-row.is-ghost {
+      border-style: dashed;
+    }
+    .section-list-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .section-list-count {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .section-list-row.is-ghost .section-list-count {
+      color: var(--accent-danger);
+    }
+    .section-list-delete-btn {
+      flex-shrink: 0;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .section-list-delete-btn:hover {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+    }
+    .section-list-delete-btn.is-confirming {
+      background: var(--accent-danger);
+      border-color: var(--accent-danger);
+      color: #fff;
+    }
   </style>
 </head>
 <body>
@@ -581,6 +631,7 @@
         <div class="panel-header">
           <span>순서</span>
           <button id="add-section-btn" title="새 Section 추가(Page 없이도 생성 가능)">+ 섹션</button>
+          <button id="section-list-btn" title="Section 목록 보기(빈 Section 확인/삭제)">≡ 섹션</button>
         </div>
         <div class="cue-list" id="cue-list-el"></div>
       </div>
@@ -693,6 +744,19 @@
         <div class="library-category-title">Videos</div>
         <div class="library-empty">준비 중 — 아직 기능이 연결되지 않았습니다.</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Section 목록 모달 (2026-07-06) — 빈 Section("유령 Section") 확인/삭제용 -->
+<div id="section-list-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>Section 목록</span>
+      <button id="section-list-close-btn" class="btn btn-ghost">닫기</button>
+    </div>
+    <div class="modal-body" id="section-list-body">
+      <!-- JS(renderSectionList)가 채운다 -->
     </div>
   </div>
 </div>
@@ -959,6 +1023,108 @@
   })
   libraryModal.addEventListener('click', (e) => {
     if (e.target === libraryModal) libraryModal.style.display = 'none' // 바깥 클릭 시 닫기
+  })
+
+  // ── Section 목록 모달 (2026-07-06, 실사용 중 발견한 공백 대응) ──
+  // "+ 섹션"으로 만든 Section이 Page를 하나도 안 받으면 CueList에 전혀
+  // 안 보인다(getSectionGroups()가 pages[] 기준으로만 그룹을 만들기
+  // 때문 — 의도된 동작, 9-19 참조). 실사용 중 이 상태의 Section이
+  // 14개나 쌓였는데 사용자가 localStorage를 직접 열어봐야만 확인할 수
+  // 있었다. 이 모달은 sectionMap을 getSectionGroups()를 거치지 않고
+  // 직접 순회해서, Page가 0개인 Section("유령 Section")도 빠짐없이
+  // 보여주고 삭제할 수 있게 한다.
+  const sectionListModal = document.getElementById('section-list-modal')
+  const sectionListBody = document.getElementById('section-list-body')
+
+  // 삭제는 되돌릴 수 없는 조작(REMOVE_SECTION은 9-19 기준 Undo 미지원 —
+  // FutureEditor.md D-Editor-4 "아직 열려있는 것" 참조)이라 확인 절차가
+  // 필요하다. confirm()은 안 쓴다 — TODO.md에 기록된 prompt() 취약점과
+  // 같은 부류의 문제(반복 대화상자 차단)를 새로 만들 수 있어서다. 대신
+  // 버튼을 두 번 눌러야 실제로 삭제되는 인라인 확인 방식을 쓴다.
+  let pendingDeleteSectionId = null
+
+  function renderSectionList() {
+    const { sectionIds, sectionMap, pages } = getState().presentation
+    sectionListBody.innerHTML = ''
+
+    if (sectionIds.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'library-empty'
+      empty.textContent = '아직 Section이 없습니다.'
+      sectionListBody.appendChild(empty)
+      return
+    }
+
+    sectionIds.forEach(id => {
+      const section = sectionMap[id]
+      if (!section) return // 방어적 — sanitizePresentation이 보장하지만 혹시 몰라 대비
+
+      const pageCount = pages.filter(p => p.sectionId === id).length
+      const isGhost = pageCount === 0
+
+      const row = document.createElement('div')
+      row.className = 'section-list-row' + (isGhost ? ' is-ghost' : '')
+
+      const info = document.createElement('div')
+      const titleEl = document.createElement('div')
+      titleEl.className = 'section-list-title'
+      titleEl.textContent = section.title
+      const countEl = document.createElement('div')
+      countEl.className = 'section-list-count'
+      countEl.textContent = isGhost ? '비어있음 — 유령 Section' : `Page ${pageCount}개`
+      info.appendChild(titleEl)
+      info.appendChild(countEl)
+
+      const deleteBtn = document.createElement('button')
+      const isPending = pendingDeleteSectionId === id
+      deleteBtn.className = 'section-list-delete-btn' + (isPending ? ' is-confirming' : '')
+      deleteBtn.textContent = isPending ? '정말 삭제?' : '삭제'
+
+      deleteBtn.addEventListener('click', () => {
+        if (pendingDeleteSectionId === id) {
+          pendingDeleteSectionId = null
+          execute({ type: 'REMOVE_SECTION', payload: { sectionId: id } })
+            .then(() => {
+              showToast(
+                pageCount > 0
+                  ? `"${section.title}" Section을 삭제했습니다. 소속돼 있던 Page ${pageCount}개는 미분류로 되돌아갑니다.`
+                  : `"${section.title}" Section을 삭제했습니다.`
+              )
+              renderSectionList()
+            })
+            .catch(err => {
+              console.error('[Section 삭제 실패]', err)
+              showToast('Section 삭제에 실패했습니다 — 콘솔을 확인해주세요.')
+            })
+        } else {
+          // 다른 행에 남아있던 확인 대기 상태는 취소하고 이 행만 확인 대기로 전환
+          pendingDeleteSectionId = id
+          renderSectionList()
+        }
+      })
+
+      row.appendChild(info)
+      row.appendChild(deleteBtn)
+      sectionListBody.appendChild(row)
+    })
+  }
+
+  document.getElementById('section-list-btn').addEventListener('click', () => {
+    pendingDeleteSectionId = null
+    renderSectionList()
+    sectionListModal.style.display = 'flex'
+  })
+  document.getElementById('section-list-close-btn').addEventListener('click', () => {
+    sectionListModal.style.display = 'none'
+  })
+  sectionListModal.addEventListener('click', (e) => {
+    if (e.target === sectionListModal) sectionListModal.style.display = 'none' // 바깥 클릭 시 닫기
+  })
+
+  // 모달이 열려있는 동안 CueList 드래그 등 다른 경로로 Section 소속이
+  // 바뀌면(예: 모달 열어둔 채로 CueList에서 드래그) 목록도 함께 갱신한다.
+  subscribe(({ state }) => {
+    if (sectionListModal.style.display === 'flex') renderSectionList()
   })
 
   // ── Editor: 가사 추가 ────────────────────

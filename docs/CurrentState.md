@@ -956,6 +956,53 @@ Section 경계를 넘나드는 위치 이동은 별도 처리 불필요 — `mov
 ### 검증
 Node로 `movePage()`를 직접 호출해 6가지 재정렬 시나리오(앞으로/뒤로/인접/역방향 삽입) 결과 배열이 기대한 순서와 정확히 일치하는지 확인. `node --check`으로 `CueList.js`와 `index.html` 임베디드 모듈 스크립트 구문 검사 통과. **브라우저 실사용 테스트 필요**: Page 선택 후 "+ 섹션" → 자동 배정되는지, CueList에서 Page를 드래그해서 다른 Page 위/아래로 놓았을 때 순서가 바뀌는지, Section 헤더/미분류 라벨에 드롭했을 때 그 소속으로 바뀌는지, Undo(Ctrl+Z)로 위치+소속이 함께 복원되는지(9-19에서 이미 준비된 `SET_PAGE_POSITION` 활용 확인).
 
+## 9-22. Section 목록 모달 (유령 Section 확인/삭제) (2026-07-06, 실사용 중 발견한 요청 대응)
+
+### 배경
+9-19~9-21 실사용 중 사용자가 직접 발견: "+ 섹션"으로 만든 Section이
+Page를 하나도 안 받으면 CueList에 전혀 안 보인다(`getSectionGroups()`가
+`pages[]` 기준으로만 그룹을 만들기 때문 — 9-19에서 이미 의도한 동작).
+디버깅 과정에서 실제로 빈 Section 14개가 쌓여있었는데, 이걸 확인할
+방법이 `localStorage.getItem()`을 직접 호출하는 것뿐이었다. 사용자가
+"Section 목록(단순 목록)을 볼 수 있게 해달라, 유령 Section 확인, 삭제도
+같이 구현해달라"고 요청.
+
+### 구현
+`index.html`에 "Section 목록" 모달 추가(`section-list-modal`, 기존
+`library-modal`과 같은 `.modal-overlay`/`.modal-box` 패턴 재사용).
+`sectionMap`을 `getSectionGroups()`를 거치지 않고 `sectionIds` 순서대로
+직접 순회해서, Page가 0개인 Section("유령 Section")도 빠짐없이 표시한다.
+각 행은 제목, Page 개수(`pages.filter(p => p.sectionId === id).length`로
+직접 계산 — `getSectionGroups()`의 파편화 가능성과 무관하게 정확한 총
+소속 개수), 삭제 버튼으로 구성. 유령 Section은 점선 테두리 + 빨간
+"비어있음 — 유령 Section" 문구로 시각적으로 구분.
+
+삭제는 되돌릴 수 없는 조작(`REMOVE_SECTION`은 Undo 미지원 —
+FutureEditor.md D-Editor-4 "아직 열려있는 것" 참조)이라 확인 절차가
+필요했지만, `confirm()`은 쓰지 않았다 — TODO.md에 이미 기록된
+`prompt()` 취약점(반복 대화상자 감지 시 브라우저가 차단 체크박스를
+띄우는 문제)과 같은 부류를 새로 만들 뿐이라서다. 대신 삭제 버튼을 두 번
+눌러야 실제로 삭제되는 인라인 확인 방식("삭제" → "정말 삭제?")을 썼다.
+
+Section 목록 버튼("≡ 섹션")은 "+ 섹션" 버튼 옆에 추가. 모달이 열려있는
+동안 다른 경로(CueList 드래그 등)로 Section 소속이 바뀌어도
+`subscribe()`로 목록이 함께 갱신된다.
+
+### 변경 파일
+`index.html`
+
+### 검증
+Node로 `renderSectionList()`와 동일한 계산 로직(유령 판정, Page 카운트)을
+재현해 5개 시나리오 검증 — 빈 Section 생성 직후 유령 분류, Page 배정 후
+유령 해제+카운트 반영, 유령/비유령 혼재 시 각각 정확히 계산, 삭제 후
+목록에서 사라지고 소속 Page는 미분류로, 유령 Section도 제약 없이 삭제
+가능 — 전부 통과. `node --check`으로 embedded module script 문법 검사
+통과.
+
+**브라우저 실사용 테스트 필요**: "≡ 섹션" 클릭 → 모달 열림, 실제로
+쌓여있던 유령 Section들이 보이는지, 삭제 버튼 두 번 클릭 시 정상
+삭제되는지, 모달 열어둔 채 CueList에서 드래그해도 목록이 갱신되는지.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
