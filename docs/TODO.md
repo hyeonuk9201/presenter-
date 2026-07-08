@@ -5,7 +5,7 @@
 > 완료된 항목은 체크만 하고 CurrentState.md의 해당 세션 번호(예: 9-11)로
 > 자세한 내용을 넘긴다. 여기서 완료 내역을 다시 설명하지 않는다.
 >
-> 최종 업데이트: 2026-07-06 (D-021 확정 — Song 재가져오기 모델, Section 스타일 기본값 항목 추가)
+> 최종 업데이트: 2026-07-06 (D-022 확정 — 스타일은 Page 단위 유지, Section Style 승격 보류)
 
 ---
 
@@ -20,7 +20,7 @@
 - [x] Persistence의 localStorage 결합도 낮추기 — 9-18에서 완료. `StorageAdapter.js`로 read/write 두 지점 추출. AppStore 부팅이 여전히 동기(sync)라는 한계는 그대로 남음(문서화만 함) — 실제 비동기 저장소 도입 시 별도 작업 필요.
 - [ ] Page 모델 전환 시점 재평가 — 지금은 플랫 구조. "한 Page에 독립적으로 편집 가능한 콘텐츠가 3개 이상 필요해지는 순간"이 Element 모델(DomainEntityArchitecture.md에 이미 설계됨) 전환 트리거. 그 전엔 플랫 필드 추가로 버틴다.
 - [ ] Asset/Song 관계 재검토 — Library 작업 들어가기 전에. Background/Video는 그냥 Asset이지만, Song이 Asset 하나인지 아니면 "Page 여러 개 + 메타데이터"를 묶는 별도 Aggregate인지 아직 열린 질문. **(2026-07-05 추가)** ProPresenter의 "Reflow"(가사 원본 텍스트 ↔ Page[] 양방향 재편집) 기능 도입 여부도 이 질문에 종속됨 — 지금은 `lyricsImport.js`가 원본 텍스트를 버리는 일방향 구조라 불가능. 조사 내용은 `Research/Observations.md` 2026-07-05 참조. **(2026-07-06 추가)** Song → Section 재가져오기(pull) 모델은 `Decisions.md`의 `D-021`로 확정됨(Section.sourceSongId, 전체 Replace, isModified 경고, 자동 감지 없음) — Song Aggregate/Library 자체 착수 시 이 규칙을 그대로 적용한다.
-- [ ] Section 단위 스타일 기본값(`pageStyleDefaults`) — **(2026-07-06 추가, `D-021` 선행 작업)** `D-021`의 재가져오기 시 Page 스타일이 초기화되는 문제를 막기 위한 장치. Song/Library와 무관하게 그 자체로 유용(Section 전체 글자 크기 일괄 변경 등)하므로 먼저 구현 가능. `domain/Section.js`에 `pageStyleDefaults` 필드 추가, Section 목록 모달 또는 별도 UI에서 편집, 신규 Page 생성 시 소속 Section의 기본값을 적용하는 경로 필요.
+- [x] 스타일 기능(Page 단위) — 이미 완성되어 있었음(확인만 함, Step 초기 세션부터 존재). 사이드바 편집 UI(정렬/굵기/크기/줄간격/색상/외곽선/그림자) + `UPDATE_PAGE` 저장, 신규 Page 생성 시에도 동일 적용. **(2026-07-06)** `D-022`로 "지금은 Page 단위 그대로 두고 Section Style 승격은 보류"를 확정 — 재가져오기(`D-021`) 기능을 실제로 설계할 때 재검토.
 
 ---
 
