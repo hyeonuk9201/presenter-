@@ -555,6 +555,28 @@
     .section-list-row.is-ghost {
       border-style: dashed;
     }
+    .section-list-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+    .section-list-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-list-color-input {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: none;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
     .section-list-title {
       font-size: 13px;
       font-weight: 600;
@@ -567,6 +589,19 @@
     }
     .section-list-row.is-ghost .section-list-count {
       color: var(--accent-danger);
+    }
+    .section-list-note-input {
+      font-size: 12px;
+      padding: 4px 6px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-primary);
+      width: 100%;
+      max-width: 220px;
+    }
+    .section-list-note-input::placeholder {
+      color: var(--text-muted);
     }
     .section-list-actions {
       display: flex;
@@ -1148,14 +1183,64 @@
       row.className = 'section-list-row' + (isGhost ? ' is-ghost' : '')
 
       const info = document.createElement('div')
+      info.className = 'section-list-info'
+      const titleRow = document.createElement('div')
+      titleRow.className = 'section-list-title-row'
       const titleEl = document.createElement('div')
       titleEl.className = 'section-list-title'
       titleEl.textContent = section.title
+
+      // 색상(2026-07-06, Section UI 남은 하위 항목) — CueList Section
+      // Tree(9-14)도 color dataset을 이미 읽고 있었으나(구현 당시부터
+      // 필드는 있었음) 값을 넣을 UI가 없었다. 네이티브 color input을
+      // 그대로 쓴다 — 커스텀 팔레트 UI는 지금 범위 밖.
+      const colorInput = document.createElement('input')
+      colorInput.type = 'color'
+      colorInput.className = 'section-list-color-input'
+      colorInput.value = section.color || '#4a9eff'
+      colorInput.title = 'Section 색상'
+      colorInput.addEventListener('change', () => {
+        execute({
+          type: 'UPDATE_SECTION',
+          payload: { section: { ...section, color: colorInput.value } },
+        }).catch(err => {
+          console.error('[Section 색상 변경 실패]', err)
+          showToast('색상 변경에 실패했습니다 — 콘솔을 확인해주세요.')
+        })
+      })
+
+      titleRow.appendChild(colorInput)
+      titleRow.appendChild(titleEl)
+
       const countEl = document.createElement('div')
       countEl.className = 'section-list-count'
       countEl.textContent = isGhost ? '비어있음 — 유령 Section' : `Page ${pageCount}개`
-      info.appendChild(titleEl)
+
+      // 메모(2026-07-06, Section UI 남은 하위 항목) — blur 시점에만
+      // 저장한다. 매 키 입력마다 UPDATE_SECTION을 쏘면 History에 키
+      // 입력 수만큼 항목이 쌓이는데, computeInverse가 UPDATE_SECTION을
+      // 아직 Undo 대상으로 등록하지 않아서(TODO.md 참조) 지금 당장은
+      // History 오염 문제는 없지만, 등록되는 시점을 대비해 미리
+      // blur 저장으로 맞춰둔다.
+      const noteInput = document.createElement('input')
+      noteInput.type = 'text'
+      noteInput.className = 'section-list-note-input'
+      noteInput.placeholder = '메모 (선택)'
+      noteInput.value = section.note || ''
+      noteInput.addEventListener('blur', () => {
+        if (noteInput.value === (section.note || '')) return // 변경 없으면 dispatch 생략
+        execute({
+          type: 'UPDATE_SECTION',
+          payload: { section: { ...section, note: noteInput.value } },
+        }).catch(err => {
+          console.error('[Section 메모 변경 실패]', err)
+          showToast('메모 변경에 실패했습니다 — 콘솔을 확인해주세요.')
+        })
+      })
+
+      info.appendChild(titleRow)
       info.appendChild(countEl)
+      info.appendChild(noteInput)
 
       const actions = document.createElement('div')
       actions.className = 'section-list-actions'
