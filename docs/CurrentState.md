@@ -1091,6 +1091,58 @@ Section 목록 모달(9-22)의 각 행에 추가:
 ### 검증
 Node로 `replaceSection()`이 `color`/`note` 필드를 올바르게 병합하는지 확인. `node --check`으로 임베디드 모듈 스크립트 구문 검사 통과. **브라우저 실사용 테스트 필요**: 색상 선택 → CueList Section 헤더의 색상 점에 즉시 반영되는지, 메모 입력 후 포커스 아웃 → 모달 다시 열어도 유지되는지(영속 확인).
 
+## 9-27. 스타일 프리셋 (D-023/D-024/D-025 구현) (2026-07-06)
+
+### 배경
+Song/Asset 관계 재검토(TODO.md) 논의 중, "재가져오기 시 스타일이
+초기화되는 문제"를 다루다가 애초에 "스타일"이 무엇을 뜻하는지가
+모호하다는 게 드러났다 — Page 개별 서식 필드(이미 존재)와 "이름 붙은
+서식 묶음을 재사용하는 프리셋"(존재하지 않음)은 다른 개념이었다.
+논의 끝에 D-022(Page가 서식 값을 직접 소유, 변경 없음), D-023(프리셋은
+값 복사일 뿐 참조 아님), D-024(적용 대상은 선택된 Page 하나로 제한,
+다중 선택은 Non-goal), D-025(저장 위치는 Presentation이 아닌
+AppSettings)로 결정이 정리됐다.
+
+### 구현
+- `domain/StylePreset.js` 신규 — `createStylePreset()`/
+  `isValidStylePreset()`/`createDefaultStylePresets()`(시스템 기본
+  프리셋 "찬양 기본"/"설교 자막" 2개). Page/Section과 어떤 참조
+  관계도 갖지 않는다(D-023).
+- `store/AppSettingsStore.js` 신규 — `persistence/StorageAdapter.js`를
+  그대로 재사용해 `tc-presenter-app-settings`라는 별도 key에 저장
+  (D-025). `{ version: 1, stylePresets: [] }` 형태. 손상된 개별
+  프리셋만 제외하고 복구하는 sanitize 로직 포함(Schema.js와 같은
+  정신). CommandBus/HistoryManager를 거치지 않는다 — 프리셋 변경은
+  Undo 대상이 아니다(Presentation 편집 이력과 무관한 앱 설정이므로).
+- `index.html` — 사이드바에 "스타일 프리셋" 드롭다운 + 적용/새로
+  저장/삭제 버튼 추가. "적용"은 사이드바 입력 필드를 채울 뿐이고
+  (D-023의 값 복사), 실제 Page 반영은 기존 "저장"/"가사 추가" 버튼을
+  그대로 눌러야 한다 — 새로운 커밋 경로를 만들지 않았다. 삭제는
+  Section 목록 모달과 같은 2단계 확인 방식("삭제" → "정말 삭제?").
+
+### 범위 밖으로 남긴 것 (D-024 Non-goal)
+- 다중 선택 Page 일괄 적용 — 현재 선택 모델(`selectedPageId`, 단일)이
+  전제라 별도 선택 모델 확장이 필요함.
+- Section 전체/Presentation 전체 일괄 적용.
+- 프리셋 "업데이트"(덮어쓰기) — 지금은 항상 새 프리셋으로 저장만
+  가능. 필요성 확인되면 후속 TODO.
+
+### 변경 파일
+`domain/StylePreset.js`(신규), `store/AppSettingsStore.js`(신규),
+`index.html`
+
+### 검증
+Node 테스트 10개 — 도메인(생성/검증/기본 프리셋 2종), AppSettingsStore
+(최초 시드+저장, 추가/삭제/수정 각각 localStorage 반영 확인), 재로드
+시나리오(기존 데이터 유지, 손상된 개별 프리셋만 제외, 완전 손상 시
+기본값 폴백) — 전부 통과. `node --check`로 신규 `.js` 파일 및
+`index.html` embedded module script 문법 검사 통과.
+
+**브라우저 실사용 테스트 필요**: 사이드바에서 프리셋 선택 → 적용 →
+값이 실제로 채워지는지 → 저장/가사 추가 버튼으로 Page에 반영되는지,
+새로 저장/삭제가 새로고침 후에도 유지되는지(AppSettings가
+Presentation과 별개로 살아남는지).
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
