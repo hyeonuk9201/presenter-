@@ -5,7 +5,7 @@
 > 완료된 항목은 체크만 하고 CurrentState.md의 해당 세션 번호(예: 9-11)로
 > 자세한 내용을 넘긴다. 여기서 완료 내역을 다시 설명하지 않는다.
 >
-> 최종 업데이트: 2026-07-09 (Song 도메인 모델/저장소 구현, 9-28)
+> 최종 업데이트: 2026-07-09 (Song Library UI 연결, 9-29)
 
 ---
 
@@ -69,7 +69,7 @@
 - [ ] 스타일 프리셋 — 업데이트(덮어쓰기) — 지금은 항상 "새로 저장"만 가능. 필요성 확인되면 착수.
 - [x] Song 도메인 모델 (`domain/Song.js`) — 9-28에서 완료. `D-026`(`Song`/`LyricBlock`, 메타데이터 없음).
 - [x] Song 저장소 (`store/SongStore.js`) — 9-28에서 완료. `AppSettingsStore.js` 패턴 재사용, `MediaStore.js`와 완전 독립(`D-027`).
-- [ ] Song Library UI — Library 모달(9-18 뼈대)에 Song 탭 연결, Song 목록/생성/편집/삭제 UI. `store/SongStore.js` 위에 얹는다.
+- [x] Song Library UI — 9-29에서 완료. Library 모달 Songs 탭에 목록/추가/편집/삭제 연결.
 - [ ] Song → Section → Page 생성 — Library에서 Song 선택 시 `Section`(`sourceSongId` 설정) + `Page[]` 생성(`D-021` 적용).
 - [ ] Song 재가져오기(Pull) 연결 — 위 항목 완료 후. `D-021`의 전체 Replace + `isModified` 경고 규칙을 실제로 구현.
 - [ ] Media Library UI — Song Library와 별도 작업(`D-027`, 범위 분리). `MediaStore.js`는 이미 있고 UI만 얹으면 됨.

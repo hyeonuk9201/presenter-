@@ -836,7 +836,9 @@
 
 <div id="toast" class="toast"></div>
 
-<!-- 라이브러리 (2026-07-05, TODO.md 뼈대만 — 기능 없음) -->
+<!-- 라이브러리 (2026-07-05 뼈대, 2026-07-09 Songs 카테고리에 실제 기능 연결 — D-026/D-027) -->
+<!-- Backgrounds/Videos는 아직 준비 중(Media Library UI는 별도 TODO, D-027 참조) -->
+
 <div id="library-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
     <div class="modal-header">
@@ -846,7 +848,10 @@
     <div class="modal-body">
       <div class="library-category">
         <div class="library-category-title">Songs</div>
-        <div class="library-empty">준비 중 — 아직 기능이 연결되지 않았습니다.</div>
+        <div class="section-list-actions" style="margin-bottom:8px;">
+          <button id="song-add-btn" class="btn btn-primary">+ 새 곡</button>
+        </div>
+        <div id="song-list-body" style="display:flex;flex-direction:column;gap:8px;"></div>
       </div>
       <div class="library-category">
         <div class="library-category-title">Backgrounds</div>
@@ -855,6 +860,38 @@
       <div class="library-category">
         <div class="library-category-title">Videos</div>
         <div class="library-empty">준비 중 — 아직 기능이 연결되지 않았습니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 곡(Song) 편집 모달 (2026-07-09, D-026/D-027 Song Library UI) -->
+<div id="song-editor-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="width:560px;">
+    <div class="modal-header">
+      <span id="song-editor-title">새 곡</span>
+      <button id="song-editor-close-btn" class="btn btn-ghost">닫기</button>
+    </div>
+    <div class="modal-body">
+      <div class="style-row">
+        <div class="sidebar-label">제목</div>
+        <input type="text" class="style-text-input" id="song-title-input" placeholder="예: 주 하나님 지으신 모든 세계">
+      </div>
+      <div class="style-row">
+        <div class="sidebar-label">태그 <span style="text-transform:none;font-weight:400;">(쉼표로 구분)</span></div>
+        <input type="text" class="style-text-input" id="song-tags-input" placeholder="예: 찬양, 경배">
+      </div>
+      <div class="style-row">
+        <div class="sidebar-label">가사 <span style="text-transform:none;font-weight:400;">(각 구절의 첫 줄은 라벨, 나머지는 가사. 빈 줄로 구절 구분)</span></div>
+        <textarea
+          id="song-lyrics-input"
+          style="width:100%;min-height:220px;"
+          placeholder="Verse 1&#10;주 하나님 지으신 모든 세계&#10;&#10;Chorus&#10;주는 하나님이시라"
+        ></textarea>
+      </div>
+      <div class="style-row" style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-ghost" id="song-editor-cancel-btn">취소</button>
+        <button class="btn btn-primary" id="song-editor-save-btn">저장</button>
       </div>
     </div>
   </div>
@@ -877,7 +914,9 @@
   import { createTextPage, createImagePage, createVideoPage } from './domain/Page.js'
   import { createSection } from './domain/Section.js'
   import { createStylePreset } from './domain/StylePreset.js'
+  import { createSong, createLyricBlock } from './domain/Song.js'
   import { getStylePresets, addStylePreset, removeStylePreset } from './store/AppSettingsStore.js'
+  import { getSongs, addSong, updateSong, removeSong } from './store/SongStore.js'
   import { getState, getSelectedPage, subscribe, registerSubscriber, getSectionGroups } from './store/AppStore.js'
   import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
   import { PersistenceSubscriber, onPersistenceStateChange } from './persistence/PersistenceSubscriber.js'
@@ -1127,10 +1166,11 @@
       })
   })
 
-  // ── 라이브러리 모달 (2026-07-05, 뼈대만 — 기능 없음) ──
+  // ── 라이브러리 모달 (2026-07-05 뼈대, 2026-07-09 Songs 실기능 연결) ──
   const libraryModal = document.getElementById('library-modal')
   document.getElementById('library-btn').addEventListener('click', () => {
     libraryModal.style.display = 'flex'
+    renderSongList()
   })
   document.getElementById('library-close-btn').addEventListener('click', () => {
     libraryModal.style.display = 'none'
@@ -1138,6 +1178,150 @@
   libraryModal.addEventListener('click', (e) => {
     if (e.target === libraryModal) libraryModal.style.display = 'none' // 바깥 클릭 시 닫기
   })
+
+  // ── Song Library (2026-07-09, D-026/D-027) ──
+  // Song → Section → Page 생성/재가져오기(Pull) 연결은 아직 이 세션
+  // 범위 밖이다(TODO.md 참조) — 여기서는 SongStore에 대한 CRUD UI만
+  // 담당한다. Song 자체는 Presentation을 몰라야 하므로(D-026), 이
+  // 편집 UI도 Presentation/AppStore를 전혀 건드리지 않는다.
+  //
+  // 가사 입력 포맷: 한 textarea에 전체 가사를 붙여넣되, 빈 줄로 구절을
+  // 구분하고 각 구절의 첫 줄을 라벨로 취급한다. 기존 "가사 추가"
+  // (utils/lyricsImport.js)가 쓰는 "빈 줄 분절" 관습을 그대로 재사용해
+  // 사용자가 이미 익숙한 패턴을 유지한다 — 다만 lyricsImport.js는
+  // Page를 만들고 이건 LyricBlock을 만드는 서로 다른 목적이라 파일을
+  // 공유하지 않는다(Song이 Page/Presentation을 모른다는 D-026 원칙과
+  // 같은 이유로, 이 파싱 로직은 Song 쪽에 독립적으로 둔다).
+  function splitLyricsToBlocks(rawText) {
+    return rawText
+      .split(/\n\s*\n/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(chunk => {
+        const lines = chunk.split('\n')
+        if (lines.length === 1) return createLyricBlock({ label: '', text: lines[0] })
+        return createLyricBlock({ label: lines[0].trim(), text: lines.slice(1).join('\n').trim() })
+      })
+  }
+
+  // 편집 시 textarea에 되돌려 채우기 위한 역변환(위 파싱과 왕복 가능하게)
+  function blocksToLyricsText(blocks) {
+    return blocks
+      .map(b => (b.label ? `${b.label}\n${b.text}` : b.text))
+      .join('\n\n')
+  }
+
+  const songListBody = document.getElementById('song-list-body')
+  const songEditorModal = document.getElementById('song-editor-modal')
+  const songEditorTitle = document.getElementById('song-editor-title')
+  const songTitleInput = document.getElementById('song-title-input')
+  const songTagsInput = document.getElementById('song-tags-input')
+  const songLyricsInput = document.getElementById('song-lyrics-input')
+
+  let editingSongId = null // null이면 새 곡 생성, 아니면 해당 id의 Song 수정
+  let pendingDeleteSongId = null // Section 목록 모달과 같은 2단계 확인 패턴(prompt() 취약점 회피)
+
+  function openSongEditor(song = null) {
+    editingSongId = song ? song.id : null
+    songEditorTitle.textContent = song ? '곡 편집' : '새 곡'
+    songTitleInput.value = song ? song.title : ''
+    songTagsInput.value = song ? song.tags.join(', ') : ''
+    songLyricsInput.value = song ? blocksToLyricsText(song.lyrics) : ''
+    songEditorModal.style.display = 'flex'
+  }
+
+  function closeSongEditor() {
+    songEditorModal.style.display = 'none'
+  }
+
+  document.getElementById('song-add-btn').addEventListener('click', () => openSongEditor(null))
+  document.getElementById('song-editor-close-btn').addEventListener('click', closeSongEditor)
+  document.getElementById('song-editor-cancel-btn').addEventListener('click', closeSongEditor)
+  songEditorModal.addEventListener('click', (e) => {
+    if (e.target === songEditorModal) closeSongEditor()
+  })
+
+  document.getElementById('song-editor-save-btn').addEventListener('click', () => {
+    const title = songTitleInput.value.trim()
+    if (!title) {
+      showToast('제목을 입력해주세요.')
+      return
+    }
+    const tags = songTagsInput.value.split(',').map(t => t.trim()).filter(Boolean)
+    const lyrics = splitLyricsToBlocks(songLyricsInput.value)
+
+    if (editingSongId) {
+      updateSong({ id: editingSongId, title, lyrics, tags })
+      showToast(`"${title}"을(를) 수정했습니다.`)
+    } else {
+      const song = createSong({ title, lyrics, tags })
+      addSong(song)
+      showToast(`"${title}"을(를) 추가했습니다.`)
+    }
+    closeSongEditor()
+    renderSongList()
+  })
+
+  function renderSongList() {
+    const songs = getSongs()
+    songListBody.innerHTML = ''
+
+    if (songs.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'library-empty'
+      empty.textContent = '아직 등록된 곡이 없습니다. "+ 새 곡"으로 추가해보세요.'
+      songListBody.appendChild(empty)
+      return
+    }
+
+    songs.forEach(song => {
+      const row = document.createElement('div')
+      row.className = 'section-list-row'
+
+      const info = document.createElement('div')
+      info.className = 'section-list-info'
+      const titleEl = document.createElement('div')
+      titleEl.className = 'section-list-title'
+      titleEl.textContent = song.title
+      const countEl = document.createElement('div')
+      countEl.className = 'section-list-count'
+      const tagText = song.tags.length > 0 ? ` · ${song.tags.join(', ')}` : ''
+      countEl.textContent = `구절 ${song.lyrics.length}개${tagText}`
+      info.appendChild(titleEl)
+      info.appendChild(countEl)
+
+      const actions = document.createElement('div')
+      actions.className = 'section-list-actions'
+
+      const editBtn = document.createElement('button')
+      editBtn.className = 'section-list-assign-btn'
+      editBtn.textContent = '편집'
+      editBtn.addEventListener('click', () => openSongEditor(song))
+
+      const deleteBtn = document.createElement('button')
+      const isPending = pendingDeleteSongId === song.id
+      deleteBtn.className = 'section-list-delete-btn' + (isPending ? ' is-confirming' : '')
+      deleteBtn.textContent = isPending ? '정말 삭제?' : '삭제'
+      deleteBtn.addEventListener('click', () => {
+        if (pendingDeleteSongId === song.id) {
+          pendingDeleteSongId = null
+          removeSong(song.id)
+          showToast(`"${song.title}"을(를) 삭제했습니다.`)
+          renderSongList()
+        } else {
+          pendingDeleteSongId = song.id
+          renderSongList()
+        }
+      })
+
+      actions.appendChild(editBtn)
+      actions.appendChild(deleteBtn)
+      row.appendChild(info)
+      row.appendChild(actions)
+      songListBody.appendChild(row)
+    })
+  }
+
 
   // ── Section 목록 모달 (2026-07-06, 실사용 중 발견한 공백 대응) ──
   // "+ 섹션"으로 만든 Section이 Page를 하나도 안 받으면 CueList에 전혀

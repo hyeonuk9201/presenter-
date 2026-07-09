@@ -1192,6 +1192,57 @@ TODO.md에 4개 항목으로 이어둠 — Song Library UI → Song → Section 
 Page 생성(`D-021` 적용) → 재가져오기(Pull) 연결 → (별도) Media
 Library UI.
 
+## 9-29. Song Library UI 연결 (2026-07-09, TODO.md Song Library UI 항목)
+
+### 배경
+9-28에서 만든 `domain/Song.js`/`store/SongStore.js` 위에 실제 UI를
+얹는 작업. Library 모달(9-18에서 뼈대만 있던 것)의 Songs 카테고리에
+목록/추가/편집/삭제를 연결했다. Song → Section → Page 생성(D-021
+적용)과 재가져오기(Pull) 연결은 이번 세션 범위 밖 — 다음 TODO 항목.
+
+### 구현
+- **`index.html` HTML**: Library 모달 Songs 카테고리에 "+ 새 곡"
+  버튼과 `#song-list-body` 목록 컨테이너 추가. 별도 `#song-editor-modal`
+  신규(제목/태그/가사 입력 + 저장/취소) — 기존 `.modal-overlay`/
+  `.modal-box` 패턴 그대로 재사용, 새 CSS 클래스는 추가하지 않았다
+  (Section 목록 모달의 `.section-list-row`/`.section-list-actions`/
+  `.section-list-delete-btn`을 그대로 재사용).
+- **가사 입력 포맷**: 한 textarea에 전체 가사를 붙여넣되, 빈 줄로
+  구절을 구분하고 각 구절의 첫 줄을 라벨로 취급
+  (`splitLyricsToBlocks`). 기존 "가사 추가"(`utils/lyricsImport.js`)의
+  "빈 줄 분절" 관습을 UX만 재사용했다 — 파일 자체는 공유하지 않는다
+  (그건 Page를 만들고 이건 `LyricBlock`을 만드는 다른 목적이라, Song이
+  Presentation을 모른다는 `D-026` 원칙과 같은 이유로 분리 유지).
+  편집 시 되돌려 채우기 위한 역변환(`blocksToLyricsText`)도 추가 —
+  왕복 변환이 원본과 동일한 구조로 복원되는지 확인함.
+- **삭제**: `alert`/`confirm`/`prompt` 대신 Section 목록 모달과 같은
+  2단계 확인 버튼 패턴(`is-confirming`, TODO.md의 `prompt()` 취약점
+  회피와 같은 이유) 재사용.
+- Song 편집 UI는 `store/SongStore.js`만 호출한다 — `AppStore`/
+  `CommandBus`/`HistoryManager`를 전혀 거치지 않는다(`D-027`, Song은
+  Presentation 편집 이력과 무관).
+
+### 변경 파일
+`index.html`(Library 모달 마크업, Song 편집 모달 신규, Song CRUD UI
+스크립트), `docs/TODO.md`
+
+### 검증
+`index.html`에서 `<script type="module">` 블록을 추출해
+`node --check` 통과. HTML 구조 무결성(중복 id 없음, `<div>` 개폐 개수
+일치) 스크립트로 확인. 가사 파싱 로직(`splitLyricsToBlocks`/
+`blocksToLyricsText`)은 별도로 추출해 Node에서 케이스별
+(라벨+여러 줄, 라벨 없는 한 줄, 왕복 변환 동일성, 빈 입력, 빈 줄
+3개 이상 연속) 검증 통과.
+
+**브라우저 실사용 테스트는 아직 안 함** — 이 컨테이너는 네트워크
+정책상 브라우저를 띄울 수 없어(허용 도메인에 브라우저 바이너리
+다운로드 경로 없음), Node 레벨 검증까지만 이번 세션에서 확인했다.
+다음에 실제로 "라이브러리 → + 새 곡 → 저장 → 편집 → 삭제" 흐름을
+직접 확인해달라는 요청과 함께 넘긴다.
+
+### 다음 단계
+Song → Section → Page 생성(D-021 적용) → 재가져오기(Pull) 연결.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
