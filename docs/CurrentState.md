@@ -1143,6 +1143,55 @@ Node 테스트 10개 — 도메인(생성/검증/기본 프리셋 2종), AppSett
 새로 저장/삭제가 새로고침 후에도 유지되는지(AppSettings가
 Presentation과 별개로 살아남는지).
 
+## 9-28. Song Aggregate 도메인 모델 + 저장소 (2026-07-09, Asset/Song 관계 재검토 착수)
+
+### 배경
+TODO.md에 유일하게 열려있던 Architecture 항목 "Asset/Song 관계 재검토"를
+착수. 대화로 다섯 가지를 순서대로 정리했다 — (1) Song Aggregate의
+책임 범위, (2) Song → Section → Page 생성 흐름이 맞는지, (3)
+Presentation과 Song의 관계, (4) Library 저장 단위를 이번엔 Song만 할지,
+(5) Asset과 Song의 관계. 결론은 `Decisions.md`의 `D-026`(Song Aggregate
+MVP 범위)과 `D-027`(Song은 Asset이 아니라 별도 Aggregate)로 확정했다 —
+`D-021`(Song → Section 재가져오기 pull 모델)은 그대로 유지, 이번 세션은
+그 위에 Song 자체의 도메인 모델을 얹는 작업이다.
+
+### 구현
+- **`domain/Song.js`** 신규 — `Song`(`id`/`title`/`lyrics`/`tags`)과
+  `LyricBlock`(`id`/`label`/`text`) 생성/검증 함수. `author`/
+  `composer`/`ccli` 없음(`D-026`). Presentation/Section을 전혀 모른다
+  — `sectionId`나 스타일 필드를 두지 않는다(`D-021` 규칙 2, `D-022`와
+  대칭).
+- **`store/SongStore.js`** 신규 — `store/AppSettingsStore.js`와 같은
+  패턴(`persistence/StorageAdapter.js` 재사용, write-through, Undo
+  대상 아님) 그대로 재사용하되 완전히 별도 storage key
+  (`tc-presenter-songs`)를 쓴다. `MediaStore.js`와 서로의 존재를 모른다
+  (`D-027`). `AppSettingsStore.js`와 달리 최초 실행 시 시드할 기본
+  Song이 없으므로(StylePreset의 "찬양 기본"/"설교 자막"과 다름), 빈
+  배열로 시작하고 최초 `persist()` 강제 호출도 생략했다 — 어차피 빈
+  상태는 저장할 필요가 없다.
+
+### 변경 파일
+`docs/Decisions.md`(D-026, D-027 추가), `domain/Song.js`(신규),
+`store/SongStore.js`(신규), `docs/TODO.md`
+
+### 검증
+Node로 도메인 함수(`createLyricBlock`/`createSong`/`isValidSong`/
+`isValidLyricBlock`) 정상 생성·기본값·검증 실패 케이스(배열 아님,
+내부 LyricBlock 손상, null) 확인. `SongStore.js`는 `localStorage`
+mock으로 최초 빈 목록 → 추가 → 조회(`getSongById`) → 실제 저장된
+raw JSON 확인 → 수정 → 삭제 → 손상된 데이터 복구(정상 Song 1개는
+살아남고 손상된 Song 1개만 제외되는지) 시나리오까지 전부 통과.
+`node --check`로 두 파일 구문 검사 통과.
+
+**브라우저 실사용 테스트는 아직 불필요** — 이번 세션은 UI 연결 전
+도메인/저장소 레이어만 구현했다. 다음 단계(Song Library UI)에서 실제
+화면 확인이 필요해진다.
+
+### 다음 단계
+TODO.md에 4개 항목으로 이어둠 — Song Library UI → Song → Section →
+Page 생성(`D-021` 적용) → 재가져오기(Pull) 연결 → (별도) Media
+Library UI.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

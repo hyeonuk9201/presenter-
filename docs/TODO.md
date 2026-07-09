@@ -5,7 +5,7 @@
 > 완료된 항목은 체크만 하고 CurrentState.md의 해당 세션 번호(예: 9-11)로
 > 자세한 내용을 넘긴다. 여기서 완료 내역을 다시 설명하지 않는다.
 >
-> 최종 업데이트: 2026-07-06 (스타일 프리셋 구현 완료, 9-27)
+> 최종 업데이트: 2026-07-09 (Song 도메인 모델/저장소 구현, 9-28)
 
 ---
 
@@ -19,7 +19,7 @@
 - [x] Save failure UI — 9-11
 - [x] Persistence의 localStorage 결합도 낮추기 — 9-18에서 완료. `StorageAdapter.js`로 read/write 두 지점 추출. AppStore 부팅이 여전히 동기(sync)라는 한계는 그대로 남음(문서화만 함) — 실제 비동기 저장소 도입 시 별도 작업 필요.
 - [ ] Page 모델 전환 시점 재평가 — 지금은 플랫 구조. "한 Page에 독립적으로 편집 가능한 콘텐츠가 3개 이상 필요해지는 순간"이 Element 모델(DomainEntityArchitecture.md에 이미 설계됨) 전환 트리거. 그 전엔 플랫 필드 추가로 버틴다.
-- [ ] Asset/Song 관계 재검토 — Library 작업 들어가기 전에. Background/Video는 그냥 Asset이지만, Song이 Asset 하나인지 아니면 "Page 여러 개 + 메타데이터"를 묶는 별도 Aggregate인지 아직 열린 질문. **(2026-07-05 추가)** ProPresenter의 "Reflow"(가사 원본 텍스트 ↔ Page[] 양방향 재편집) 기능 도입 여부도 이 질문에 종속됨 — 지금은 `lyricsImport.js`가 원본 텍스트를 버리는 일방향 구조라 불가능. 조사 내용은 `Research/Observations.md` 2026-07-05 참조. **(2026-07-06 추가)** Song → Section 재가져오기(pull) 모델은 `Decisions.md`의 `D-021`로 확정됨(Section.sourceSongId, 전체 Replace, isModified 경고, 자동 감지 없음) — Song Aggregate/Library 자체 착수 시 이 규칙을 그대로 적용한다.
+- [x] Asset/Song 관계 재검토 — 9-28에서 해소. Song은 Asset이 아니라 별도 Aggregate(`D-027`), MVP 범위는 "가사 저장"만(`D-026`, `Song`/`LyricBlock`, 메타데이터 보류). Reflow 도입 여부는 여전히 별도 열린 질문으로 남음(`Research/Observations.md` 2026-07-05 참조, Song Aggregate가 생겼다고 자동으로 필요해지는 건 아님 — 실사용 신호 생기면 재검토).
 - [x] 스타일 기능(Page 단위) — 이미 완성되어 있었음(확인만 함, Step 초기 세션부터 존재). 사이드바 편집 UI(정렬/굵기/크기/줄간격/색상/외곽선/그림자) + `UPDATE_PAGE` 저장, 신규 Page 생성 시에도 동일 적용. **(2026-07-06)** `D-022`로 "지금은 Page 단위 그대로 두고 Section Style 승격은 보류"를 확정 — 재가져오기(`D-021`) 기능을 실제로 설계할 때 재검토.
 
 ---
@@ -67,6 +67,12 @@
 - [x] 스타일 프리셋 — 9-27에서 완료. `D-023`(값 복사, 참조 아님)/`D-024`(선택된 Page 하나에만 적용)/`D-025`(AppSettings에 저장, Presentation과 독립)에 따라 구현. 시스템 기본 프리셋 2개("찬양 기본", "설교 자막") 제공, 새로 저장/삭제 가능.
 - [ ] 스타일 프리셋 — 다중 선택 Page 적용 — `D-024` Non-goal로 명시 보류. 현재 선택 모델(`selectedPageId`, 단일)의 확장이 선행돼야 함 — 필요성이 실사용으로 확인되면 착수.
 - [ ] 스타일 프리셋 — 업데이트(덮어쓰기) — 지금은 항상 "새로 저장"만 가능. 필요성 확인되면 착수.
+- [x] Song 도메인 모델 (`domain/Song.js`) — 9-28에서 완료. `D-026`(`Song`/`LyricBlock`, 메타데이터 없음).
+- [x] Song 저장소 (`store/SongStore.js`) — 9-28에서 완료. `AppSettingsStore.js` 패턴 재사용, `MediaStore.js`와 완전 독립(`D-027`).
+- [ ] Song Library UI — Library 모달(9-18 뼈대)에 Song 탭 연결, Song 목록/생성/편집/삭제 UI. `store/SongStore.js` 위에 얹는다.
+- [ ] Song → Section → Page 생성 — Library에서 Song 선택 시 `Section`(`sourceSongId` 설정) + `Page[]` 생성(`D-021` 적용).
+- [ ] Song 재가져오기(Pull) 연결 — 위 항목 완료 후. `D-021`의 전체 Replace + `isModified` 경고 규칙을 실제로 구현.
+- [ ] Media Library UI — Song Library와 별도 작업(`D-027`, 범위 분리). `MediaStore.js`는 이미 있고 UI만 얹으면 됨.
 - [ ] Section 추가 버튼의 `prompt()` 취약점 — **(2026-07-06 실사용 중 발견)** 브라우저가 `prompt()`/`alert()`를 반복 호출 감지하면 "이 페이지가 추가 대화상자를 만들지 못하게 차단" 체크박스를 띄우는데, 실수로 체크하면 그 이후 "+ 섹션" 클릭 시 프롬프트 자체가 안 뜨고 즉시 `null`을 반환해 버튼이 안 먹는 것처럼 보인다. 단순 새로고침으로는 안 풀리고 탭을 새로 열어야(로컬 서버 재시작 등) 풀리는 경우가 있어 사용자 입장에서 원인 파악이 어려움. **부분 대응 완료(9-20, 9-21)**: 성공/실패를 토스트로 안내하게 되어 "버튼이 안 먹는다"는 오인은 줄었고, 선택된 Page 자동 배정(9-21)까지 되어 실사용 혼란은 대부분 해소됨. 다만 `prompt()` 자체를 인앱 모달로 교체하는 근본 해결은 아직 안 함 — 차단 체크박스에 실수로 걸리는 근본 원인은 그대로 남아있음. **(2026-07-06 추가)** 스타일 프리셋(9-27)의 "새로 저장"도 같은 `prompt()`를 재사용하므로 동일한 위험을 공유함.
 
 ---

@@ -995,5 +995,102 @@ StylePreset {
 `withSchemaVersion` 패턴을 그대로 재사용). 초기 상태에는 시스템
 기본 프리셋 2개("찬양 기본", "설교 자막")를 시드로 제공한다.
 
+# D-026
 
+## Song Aggregate — MVP 범위는 "가사 저장"만, 메타데이터는 확장 항목으로 미룬다
+
+### 결정
+
+Song Aggregate는 MVP에서 다음 필드만 가진다.
+
+```ts
+Song {
+  id: string
+  title: string
+  lyrics: LyricBlock[]
+  tags: string[]
+}
+
+LyricBlock {
+  id: string
+  label: string   // 예: "Verse 1", "Chorus"
+  text: string
+}
+```
+
+`author`/`composer`/`ccli` 같은 메타데이터 필드는 지금 넣지 않는다.
+
+Song은 Presentation을 알지 못한다 — `LyricBlock`에 `sectionId`나
+스타일 필드(`fontSize` 등)를 두지 않는다. 이는 `D-021` 규칙 2("Page는
+자신이 어느 Song에서 왔는지 모른다")와 대칭 원칙이다. 스타일은 이미
+`D-022`로 Page가 직접 소유하는 것으로 확정돼 있고, Song이 스타일을
+들고 있으면 재가져오기 시 어느 쪽 스타일이 우선하는지가 애매해져
+`D-021`의 "전체 Replace" 원칙과 충돌한다.
+
+기본 순서는 별도 필드 없이 `lyrics` 배열의 순서 자체가 SSOT다
+(`Presentation.sectionIds`와 같은 패턴).
+
+### 이유
+
+`author`/`composer`/`ccli`는 분명 필요한 정보지만, 지금 프로젝트에
+이 값을 실제로 쓰는 기능이 하나도 없다 — 검색하지 않고, 화면에
+표시하지 않고, 송출하지 않고, 재가져오기(`D-021`)에도 영향을 주지
+않는다. 즉 "저장만 하고 사용하지 않는 데이터"다. 나중에 CCLI 표기나
+저작권 관리 기능을 실제로 만들 때 필드를 추가해도 이미 존재하는
+`lyrics`/`title`/`tags` 구조를 깨지 않으므로, 지금 선제적으로 넣어둘
+이유가 없다(YAGNI, `D-022`/`D-023`과 같은 정신).
+
+### 결과
+
+`domain/Song.js`가 이 필드만으로 구현된다. `author`/`composer`/`ccli`
+확장은 실제 필요가 생기면 별도 Decision(D-026 이후 번호)으로 다룬다 —
+이 Decision이 그 확장 자체를 막지는 않는다(추가 전용 변경이라
+Aggregate 구조가 깨지지 않는다).
+
+관련 문서: `TODO.md`의 "Asset/Song 관계 재검토", `D-021`(Song →
+Section 재가져오기 모델, 이 Decision은 그 위에 얹히며 재가져오기
+정책 자체는 건드리지 않는다).
+
+# D-027
+
+## Song은 Asset이 아니라 별도 Aggregate다 — Library는 UI에서만 하나로 묶는다
+
+### 결정
+
+`Song`과 `Asset`(Media — image/video/audio)은 완전히 독립된 도메인
+모델로 유지한다. 서로 참조하지 않고, 공통 상위 타입을 두지 않는다.
+
+```text
+Library (UI 개념 — 탭으로만 묶음)
+ ├── Song   → SongStore
+ └── Media  → MediaStore
+```
+
+`SongStore`와 `MediaStore`는 서로의 존재를 모른다.
+
+### 이유
+
+`AssetArchitecture.md`의 Asset은 본질적으로 **바이너리 리소스**를
+다루는 Registry(`source`/`status`/`blob` 중심 — loading/ready/failed
+같은 런타임 상태를 가짐)다. Song은 바이너리가 아니라 **구조화된
+텍스트 데이터**(가사 블록 + 메타데이터)라 필드 shape 자체가 다르다.
+억지로 같은 타입에 넣으면(`Asset.type: 'song'`) Asset의 "외부 리소스
+최소 수정 책임"이라는 목적과 맞지 않게 된다.
+
+`D-023`(스타일 프리셋)도 같은 결로 갔다 — 서로 다른 개념 사이에
+억지로 참조 관계를 만들지 않는다는 원칙을 여기서도 재사용한다.
+
+실무적으로도 저장 방식이 다르다 — Song은 텍스트라 `localStorage`로
+충분하지만(`AppSettingsStore.js`와 같은 패턴), Media는 Blob이라
+IndexedDB(`MediaStore.js`)가 필요하다. 하나로 묶으면 나중에 다시
+쪼개야 할 가능성이 크다.
+
+### 결과
+
+`domain/Song.js` + `store/SongStore.js`(신규, `AppSettingsStore.js`
+패턴 재사용, 별도 storage key)로 Song을 구현한다. Media Library UI는
+이 작업 범위 밖 — TODO.md에 별도 항목으로 남긴다.
+
+관련 문서: `TODO.md`의 "Asset/Song 관계 재검토"(이 Decision으로
+해소), `AssetArchitecture.md`.
 
