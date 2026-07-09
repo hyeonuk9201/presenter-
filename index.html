@@ -395,6 +395,22 @@
     }
     .style-text-input::placeholder { color: var(--text-muted); }
 
+    .style-preset-actions {
+      flex-direction: row;
+      gap: 6px;
+    }
+    .style-preset-actions .btn {
+      flex: 1;
+      font-size: 11px;
+      padding: 4px 6px;
+      white-space: nowrap;
+    }
+    .style-preset-actions .btn.is-confirming {
+      background: var(--accent-danger);
+      border-color: var(--accent-danger);
+      color: #fff;
+    }
+
     .font-size-row {
       display: flex;
       align-items: center;
@@ -742,6 +758,22 @@
           placeholder="가사를 입력하세요.&#10;빈 줄로 절을 구분합니다.&#10;&#10;예)&#10;주께 감사해 할렐루야&#10;주께 감사해 아멘&#10;&#10;찬양해 영원히&#10;찬양해 주님을"
         ></textarea>
         <div id="editor-sidebar">
+          <!-- 스타일 프리셋(D-023/D-024/D-025, 2026-07-06) — 적용은 값
+               복사일 뿐이다. 적용해도 아래 입력값이 채워질 뿐, 실제
+               Page에 반영되려면 "저장"(수정 모드) 또는 "가사 추가"
+               (새 Page 모드) 버튼을 그대로 눌러야 한다 — 새로운 저장/
+               커밋 경로를 만들지 않는다. -->
+          <div class="style-row">
+            <div class="sidebar-label">스타일 프리셋</div>
+            <select class="style-select" id="style-preset-select">
+              <option value="">선택...</option>
+            </select>
+          </div>
+          <div class="style-row style-preset-actions">
+            <button class="btn btn-ghost" id="style-preset-apply-btn">적용</button>
+            <button class="btn btn-ghost" id="style-preset-save-btn">새로 저장</button>
+            <button class="btn btn-ghost" id="style-preset-delete-btn">삭제</button>
+          </div>
           <div class="style-row">
             <div class="sidebar-label">라벨 <span style="text-transform:none;font-weight:400;">(CueList 표시용, 미디어 Page만 의미 있음)</span></div>
             <input type="text" class="style-text-input" id="page-label" placeholder="예: worship-intro.mp4">
@@ -844,6 +876,8 @@
 <script type="module">
   import { createTextPage, createImagePage, createVideoPage } from './domain/Page.js'
   import { createSection } from './domain/Section.js'
+  import { createStylePreset } from './domain/StylePreset.js'
+  import { getStylePresets, addStylePreset, removeStylePreset } from './store/AppSettingsStore.js'
   import { getState, getSelectedPage, subscribe, registerSubscriber, getSectionGroups } from './store/AppStore.js'
   import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
   import { PersistenceSubscriber, onPersistenceStateChange } from './persistence/PersistenceSubscriber.js'
@@ -1475,6 +1509,105 @@
   const textStrokeInput2 = document.getElementById('text-stroke')
   const textStrokeVal2 = document.getElementById('text-stroke-val')
   const textShadowInput2 = document.getElementById('text-shadow')
+
+  // ── 스타일 프리셋 (D-023/D-024/D-025, 2026-07-06) ──────────
+  // "적용"은 값 복사일 뿐이다(D-023) — 사이드바 입력 필드를 채우기만
+  // 하고, 그 이후 Page에 실제로 반영되려면 기존 "저장"(수정 모드) 또는
+  // "가사 추가"(새 Page 모드) 버튼을 그대로 눌러야 한다. 새로운 커밋
+  // 경로를 만들지 않는다 — Page는 프리셋에서 왔다는 사실 자체를 모른다.
+  const presetSelect = document.getElementById('style-preset-select')
+  const presetApplyBtn = document.getElementById('style-preset-apply-btn')
+  const presetSaveBtn = document.getElementById('style-preset-save-btn')
+  const presetDeleteBtn = document.getElementById('style-preset-delete-btn')
+  let pendingDeletePresetId = null
+
+  function renderStylePresetOptions() {
+    const presets = getStylePresets()
+    const currentValue = presetSelect.value
+    presetSelect.innerHTML = '<option value="">선택...</option>'
+    presets.forEach(preset => {
+      const opt = document.createElement('option')
+      opt.value = preset.id
+      opt.textContent = preset.name
+      presetSelect.appendChild(opt)
+    })
+    // 삭제/저장 직후에도 가능하면 선택 상태를 유지한다(같은 id가 아직
+    // 있으면). 삭제된 경우엔 자연히 "선택..."으로 돌아간다.
+    if (presets.some(p => p.id === currentValue)) presetSelect.value = currentValue
+
+    pendingDeletePresetId = null
+    presetDeleteBtn.textContent = '삭제'
+    presetDeleteBtn.classList.remove('is-confirming')
+  }
+  renderStylePresetOptions()
+
+  presetSelect.addEventListener('change', () => {
+    // 다른 프리셋을 고르면 삭제 확인 대기 상태는 취소한다.
+    pendingDeletePresetId = null
+    presetDeleteBtn.textContent = '삭제'
+    presetDeleteBtn.classList.remove('is-confirming')
+  })
+
+  presetApplyBtn.addEventListener('click', () => {
+    const preset = getStylePresets().find(p => p.id === presetSelect.value)
+    if (!preset) {
+      showToast('적용할 프리셋을 먼저 선택하세요.')
+      return
+    }
+    // D-024: 지금 사이드바에 열려있는 대상(선택된 Page 수정 모드 또는
+    // 새 Page 추가 모드) 하나에만 적용한다 — 다중 선택/Section 일괄
+    // 적용은 MVP 범위 밖(Non-goal).
+    hAlignEl.value = preset.horizontalAlign
+    vAlignEl.value = preset.verticalAlign
+    fontWeightEl.value = preset.fontWeight
+    fontSizeInput2.value = preset.fontSize
+    fontSizeVal2.textContent = preset.fontSize
+    lineHeightInput2.value = preset.lineHeight
+    lineHeightVal2.textContent = preset.lineHeight
+    colorInput2.value = preset.color
+    textStrokeInput2.value = preset.textStroke
+    textStrokeVal2.textContent = preset.textStroke
+    textShadowInput2.checked = preset.textShadow
+    showToast(`"${preset.name}" 스타일을 적용했습니다. ${saveBtn.style.display === 'none' ? '"가사 추가"' : '"저장"'} 버튼을 눌러야 실제로 반영됩니다.`)
+  })
+
+  presetSaveBtn.addEventListener('click', () => {
+    const name = prompt('프리셋 이름', '새 프리셋')
+    if (name === null) return // 취소
+    const preset = createStylePreset({
+      name: name || '새 프리셋',
+      horizontalAlign: hAlignEl.value,
+      verticalAlign: vAlignEl.value,
+      fontWeight: fontWeightEl.value,
+      fontSize: Number(fontSizeInput2.value),
+      lineHeight: Number(lineHeightInput2.value),
+      color: colorInput2.value,
+      textStroke: Number(textStrokeInput2.value),
+      textShadow: textShadowInput2.checked,
+    })
+    addStylePreset(preset)
+    renderStylePresetOptions()
+    presetSelect.value = preset.id
+    showToast(`"${preset.name}" 프리셋을 저장했습니다.`)
+  })
+
+  presetDeleteBtn.addEventListener('click', () => {
+    const id = presetSelect.value
+    if (!id) {
+      showToast('삭제할 프리셋을 먼저 선택하세요.')
+      return
+    }
+    if (pendingDeletePresetId === id) {
+      const preset = getStylePresets().find(p => p.id === id)
+      removeStylePreset(id)
+      renderStylePresetOptions()
+      showToast(`"${preset?.name ?? '프리셋'}"을 삭제했습니다.`)
+    } else {
+      pendingDeletePresetId = id
+      presetDeleteBtn.textContent = '정말 삭제?'
+      presetDeleteBtn.classList.add('is-confirming')
+    }
+  })
 
   // ── 새 Page 버튼 → 추가 모드 복귀 ─────────
   newPageBtn.addEventListener('click', () => {
