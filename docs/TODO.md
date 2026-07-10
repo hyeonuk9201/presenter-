@@ -5,7 +5,7 @@
 > 완료된 항목은 체크만 하고 CurrentState.md의 해당 세션 번호(예: 9-11)로
 > 자세한 내용을 넘긴다. 여기서 완료 내역을 다시 설명하지 않는다.
 >
-> 최종 업데이트: 2026-07-09 (Song Library UI 연결, 9-29)
+> 최종 업데이트: 2026-07-09 (Song → Section → Page 생성 + 재가져오기 연결 완료, 9-30)
 
 ---
 
@@ -70,8 +70,9 @@
 - [x] Song 도메인 모델 (`domain/Song.js`) — 9-28에서 완료. `D-026`(`Song`/`LyricBlock`, 메타데이터 없음).
 - [x] Song 저장소 (`store/SongStore.js`) — 9-28에서 완료. `AppSettingsStore.js` 패턴 재사용, `MediaStore.js`와 완전 독립(`D-027`).
 - [x] Song Library UI — 9-29에서 완료. Library 모달 Songs 탭에 목록/추가/편집/삭제 연결.
-- [ ] Song → Section → Page 생성 — Library에서 Song 선택 시 `Section`(`sourceSongId` 설정) + `Page[]` 생성(`D-021` 적용).
-- [ ] Song 재가져오기(Pull) 연결 — 위 항목 완료 후. `D-021`의 전체 Replace + `isModified` 경고 규칙을 실제로 구현.
+- [x] Song → Section → Page 생성 — 9-30에서 완료. Library에서 Song 선택 시 `Section`(`sourceSongId` 설정) + `Page[]` 생성(`D-021` 적용).
+- [x] Song 재가져오기(Pull) 연결 — 9-30에서 완료. `D-021`의 전체 Replace(위치 유지) + `isModified` 경고 규칙 구현. Section 목록 모달에 "다시 가져오기" 버튼 + 경고 표시.
+- [ ] Song CRUD/재가져오기의 Undo 지원 — 기존 Section CRUD처럼 미지원 상태로 남음(FutureEditor.md D-Editor-4 참조). 필요성 확인되면 착수.
 - [ ] Media Library UI — Song Library와 별도 작업(`D-027`, 범위 분리). `MediaStore.js`는 이미 있고 UI만 얹으면 됨.
 - [ ] Section 추가 버튼의 `prompt()` 취약점 — **(2026-07-06 실사용 중 발견)** 브라우저가 `prompt()`/`alert()`를 반복 호출 감지하면 "이 페이지가 추가 대화상자를 만들지 못하게 차단" 체크박스를 띄우는데, 실수로 체크하면 그 이후 "+ 섹션" 클릭 시 프롬프트 자체가 안 뜨고 즉시 `null`을 반환해 버튼이 안 먹는 것처럼 보인다. 단순 새로고침으로는 안 풀리고 탭을 새로 열어야(로컬 서버 재시작 등) 풀리는 경우가 있어 사용자 입장에서 원인 파악이 어려움. **부분 대응 완료(9-20, 9-21)**: 성공/실패를 토스트로 안내하게 되어 "버튼이 안 먹는다"는 오인은 줄었고, 선택된 Page 자동 배정(9-21)까지 되어 실사용 혼란은 대부분 해소됨. 다만 `prompt()` 자체를 인앱 모달로 교체하는 근본 해결은 아직 안 함 — 차단 체크박스에 실수로 걸리는 근본 원인은 그대로 남아있음. **(2026-07-06 추가)** 스타일 프리셋(9-27)의 "새로 저장"도 같은 `prompt()`를 재사용하므로 동일한 위험을 공유함.
 
