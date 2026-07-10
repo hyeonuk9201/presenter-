@@ -259,7 +259,14 @@ export function createCueList(containerEl) {
 
     const preview = document.createElement('div')
     preview.className = 'cue-preview'
-    preview.textContent = getPreviewText(page)
+    const previewText = getPreviewText(page)
+    preview.textContent = previewText
+    // 항목 폭 제약으로 "가사첫줄 — 파일명" 조합이 CSS ellipsis로 잘리는
+    // 문제(2026-07-05 발견, TODO.md "CueList 항목 텍스트 잘림 개선").
+    // hover 시 네이티브 title 툴팁으로 전체 텍스트를 보여준다 — 별도
+    // 커스텀 툴팁 컴포넌트 없이 가장 낮은 리스크로 완료 조건(hover로
+    // 확인 가능)을 만족한다. Section 헤더의 count.title과 동일한 패턴.
+    preview.title = previewText
 
     const type = document.createElement('div')
     type.className = 'cue-type'
