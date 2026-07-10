@@ -19,6 +19,10 @@
 - [x] Save failure UI — 9-11
 - [x] Persistence의 localStorage 결합도 낮추기 — 9-18에서 완료. `StorageAdapter.js`로 read/write 두 지점 추출. AppStore 부팅이 여전히 동기(sync)라는 한계는 그대로 남음(문서화만 함) — 실제 비동기 저장소 도입 시 별도 작업 필요.
 - [ ] Page 모델 전환 시점 재평가 — 지금은 플랫 구조. "한 Page에 독립적으로 편집 가능한 콘텐츠가 3개 이상 필요해지는 순간"이 Element 모델(DomainEntityArchitecture.md에 이미 설계됨) 전환 트리거. 그 전엔 플랫 필드 추가로 버틴다.
+- [ ] 테스트 인프라 도입 (node:test 기반) — `D-028` 참조. 세션마다 임시로 짜고 지우던 Node 검증 스크립트를 회귀 테스트로 전환.
+  - node:test + 최소 package.json
+  - domain/store 중심 회귀 테스트 구축
+  - ManualTestChecklist.md 추가
 - [x] Asset/Song 관계 재검토 — 9-28에서 해소. Song은 Asset이 아니라 별도 Aggregate(`D-027`), MVP 범위는 "가사 저장"만(`D-026`, `Song`/`LyricBlock`, 메타데이터 보류). Reflow 도입 여부는 여전히 별도 열린 질문으로 남음(`Research/Observations.md` 2026-07-05 참조, Song Aggregate가 생겼다고 자동으로 필요해지는 건 아님 — 실사용 신호 생기면 재검토).
 - [x] 스타일 기능(Page 단위) — 이미 완성되어 있었음(확인만 함, Step 초기 세션부터 존재). 사이드바 편집 UI(정렬/굵기/크기/줄간격/색상/외곽선/그림자) + `UPDATE_PAGE` 저장, 신규 Page 생성 시에도 동일 적용. **(2026-07-06)** `D-022`로 "지금은 Page 단위 그대로 두고 Section Style 승격은 보류"를 확정 — 재가져오기(`D-021`) 기능을 실제로 설계할 때 재검토.
 

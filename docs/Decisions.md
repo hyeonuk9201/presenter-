@@ -1094,3 +1094,88 @@ IndexedDB(`MediaStore.js`)가 필요하다. 하나로 묶으면 나중에 다시
 관련 문서: `TODO.md`의 "Asset/Song 관계 재검토"(이 Decision으로
 해소), `AssetArchitecture.md`.
 
+# D-028
+
+## 테스트 인프라 도입 — node:test 기반 회귀 테스트 체계 구축
+
+### 결정
+
+지금까지 세션마다 임시로 작성하고 검증 후 삭제하던 Node 스크립트
+방식을, 소스에 co-locate된 회귀 테스트 파일로 전환한다.
+
+- 러너: Node 내장 `node:test` + `assert/strict`. 별도 테스트
+  프레임워크(Jest/Vitest)는 도입하지 않는다.
+- `package.json` 최소 신규 도입:
+  `{ "type": "module", "scripts": { "test": "node --test" },
+  "devDependencies": { "fake-indexeddb": "..." } }` 수준. 빌드
+  스텝/번들러는 추가하지 않는다 — index.html/output.html은 여전히
+  `<script type="module">`로 직접 로드되는 정적 파일 구조를
+  유지한다.
+- 배치: `tests/` 최상위 폴더를 신설하지 않고, 기존 폴더 구조
+  (domain/store/command/history/media/persistence) 옆에
+  `*.test.js`를 co-locate한다(예: `domain/Song.test.js`,
+  `store/SongStore.test.js`).
+- 자동화 대상은 DOM에 의존하지 않는 계층으로 한정한다: `domain/*`,
+  `store/*`(SongStore/AppSettingsStore/MediaStore),
+  `command/CommandBus.js`, `history/HistoryManager.js`,
+  `persistence/*`. IndexedDB가 필요한 곳(MediaStore, CommandBus의
+  media preload)만 `fake-indexeddb`를 사용한다.
+- `ui/*.js`, `index.html`/`output.html`의 embedded script, 실제
+  렌더링/클릭은 자동화 대상에서 제외하고 수동 검증으로 남긴다. 이를
+  위해 `docs/ManualTestChecklist.md`를 신설해, 세션마다
+  CurrentState.md에 흩어져 있던 "브라우저 실사용 테스트 필요" 항목을
+  한 곳에 모아 TODO.md와 같은 방식(체크 후 세션 번호 연결)으로
+  관리한다.
+
+### 이유
+
+CurrentState.md 전체에 걸쳐 반복된 패턴: 세션마다 Node 스크립트를 새로
+작성해 검증하고, 검증이 끝나면 그 스크립트를 삭제한다(9-19, D-019/
+D-020, 9-28, 9-29, 9-30 등 전 세션에서 동일). 이 방식은 그 세션 안에서는
+유효하지만, 다음 세션이 같은 경로를 다시 건드릴 때 회귀를 잡아줄 게
+남아있지 않다 — 실제로 D-019에서 발견된 "순서 역전"과 "재귀 기록 방지
+무력화" 두 잠재 결함은 우연히 같은 세션 안에서 잡혔을 뿐, 만약 그
+세션의 임시 스크립트가 이미 삭제된 뒤 다음 세션에서 `computeInverse()`에
+`INSERT_PAGE_AT` 케이스가 추가됐다면 회귀로 재발했을 수 있었다.
+
+특히 TODO.md에 남아있는 "Song CRUD/재가져오기의 Undo 지원"이 다음
+후보로 거론되는데, 이 작업은 `HistoryManager.js`/`CommandBus.js`를
+다시 건드리게 될 가능성이 높다 — 이 두 파일은 이미 한 번(D-019)
+비동기 전환으로 인한 미묘한 타이밍 버그를 낸 이력이 있으므로, 다시
+손대기 전에 지금 동작(직렬 큐, 재귀 방지 플래그, Undo/Redo 왕복)을
+고정하는 회귀 테스트를 먼저 깔아두는 게 안전하다.
+
+번들러/프레임워크를 새로 들이지 않는 이유는 이 프로젝트의 정적 파일
+구조(빌드 스텝 없음)를 깨지 않기 위함이다 — `node --test`는 Node
+18+ 기본 내장이라 추가 설치 없이 이 성격을 유지한다. `tests/` 폴더를
+새로 만들지 않고 co-locate하는 이유는 이미 "폴더 = 책임 단위"
+(domain/store/command/history 등)로 구조가 뚜렷하기 때문이다.
+
+UI/렌더링 계층을 자동화 대상에서 제외하는 이유는, 9-2에서 실제로
+발생한 버그 유형(`PreviewPanel.js`가 `media`를 하드코딩 `null`로
+두고 연결을 빠뜨림)이 "로직은 맞는데 연결이 빠짐" 성격이라
+domain/store 테스트로는 못 잡는 영역이기 때문이다 — 이 부분은 자동
+테스트로 대체하지 않고 수동 체크리스트로 계속 관리한다.
+
+### 결과
+
+신규 파일: `package.json`(최소 구성), `docs/ManualTestChecklist.md`,
+그리고 domain/store/command/history/persistence 계층별
+`*.test.js` 파일들(첫 대상은 순차적으로 추가).
+
+영향 받지 않는 파일: `index.html`, `output.html`, `ui/*.js`,
+`view/*.js` — 이번 결정은 테스트 파일을 추가하는 것뿐이며 기존
+프로덕션 코드는 한 글자도 수정하지 않는다. `reduce()`/Store/
+Persistence/History 구조 자체도 무수정.
+
+`.gitignore`에 `node_modules/` 추가 필요(신규).
+
+이번 결정은 9-29/9-30에서 남아있는 "브라우저 실사용 테스트 필요"
+부채를 해소하지 않는다 — 자동 테스트는 domain/store 로직만
+커버하며, 그 부채는 `ManualTestChecklist.md`로 옮겨 별도로 추적한다.
+
+관련 문서: `TODO.md`의 "테스트 인프라 도입" 항목(이 Decision으로
+착수), `Research/AI Development Workflow.md`(Observation → Research
+→ Decision → Implementation 원칙에 따라 스캐폴딩 전 이 Decision을
+먼저 기록).
+
