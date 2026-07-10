@@ -1243,6 +1243,92 @@ Library UI.
 ### 다음 단계
 Song → Section → Page 생성(D-021 적용) → 재가져오기(Pull) 연결.
 
+## 9-30. Song → Section → Page 생성 + 재가져오기(Pull) 연결 (2026-07-09, D-021 구현)
+
+### 배경
+9-28/9-29로 Song Aggregate와 Library UI가 준비됐으니, 이제 D-021이
+정의해둔 규칙(Section에 `sourceSongId`, Page는 출처를 모름, 재가져오기는
+전체 Replace, 자동 감지 없음, `isModified` 경고)을 실제로 연결하는
+차례. TODO.md에 남겨뒀던 다음 순서 그대로 진행.
+
+### 구현
+
+**`domain/Section.js`**: `sourceSongId`(nullable)/`isModified`(boolean)
+필드 추가. `isValidSection()`은 두 필드가 없어도(undefined) 유효하다고
+본다 — 2026-07-09 이전에 저장된 Section도 깨지지 않아야 하므로, 실제
+기본값 적용은 `sanitizePresentation()` 쪽 책임으로 분리했다.
+
+**`domain/Presentation.js`**:
+- `sanitizePresentation()` — Section 로드 시 `sourceSongId ?? null`,
+  `isModified ?? false`로 정규화(구버전 데이터 호환).
+- `importSongAsSection(presentation, song)` 신규(D-021 규칙 1) — Song의
+  각 LyricBlock을 text Page로 변환하고, `sourceSongId`를 가진 새
+  Section을 만들어 `pages[]` 맨 뒤에 붙인다. Page는 어느 LyricBlock/
+  Song에서 왔는지 전혀 기록하지 않는다(규칙 2).
+- `reimportSongIntoSection(presentation, sectionId, song)` 신규(규칙 3)
+  — 그 Section 소속 Page를 전부 지우고 Song의 최신 내용으로 다시
+  생성하되, **원래 있던 위치 그대로** 끼워 넣는다(`getSectionGroups()`로
+  현재 그룹 위치를 계산). 성공하면 `isModified`를 `false`로 리셋한다.
+- `markModifiedSongSections(prev, next)` 신규(규칙 5) — Song 출처가
+  있는 Section의 Page 목록이 이전 상태와 하나라도 달라지면(참조
+  동일성 기준) `isModified`를 `true`로 전환한다. 필드 단위 diff는
+  하지 않는다(D-021이 명시적으로 피한 복잡도). 한 번 `true`가 되면
+  `reimportSongIntoSection()`을 실행하기 전까지 되돌아가지 않는다.
+
+**`store/AppStore.js`**: `IMPORT_SONG_AS_SECTION`/`REIMPORT_SONG_SECTION`
+액션 추가. `dispatch()`에 `markModifiedSongSections()`를 매 액션마다
+호출하는 로직을 추가하되, 이 두 액션 자신은 예외로 건너뛴다 — 두
+액션 모두 "그 Section의 Page 목록을 통째로 새로 만드는" 동작이라
+일반적인 diff 기준으로는 반드시 "변경"으로 잡히기 때문이다(방금 막
+생성/리셋한 Section을 곧바로 "수정됨"으로 표시해버리는 버그를 테스트
+중 실제로 발견하고 수정함 — 아래 검증 참조).
+
+**`index.html`**:
+- Library 모달 Songs 탭에 "Flow에 추가" 버튼 — 클릭 시
+  `IMPORT_SONG_AS_SECTION` 실행, 성공 토스트.
+- Section 목록 모달에 "다시 가져오기" 버튼(`sourceSongId` 있는
+  Section에만 표시) — 원본 Song이 Library에서 삭제됐으면 토스트로
+  안내하고 실행하지 않는다. `isModified`가 true인 Section은 Page
+  개수 옆에 "⚠ 원본 Song과 달라짐(수동 편집됨)" 표시.
+
+### 범위 밖으로 남긴 것
+- `IMPORT_SONG_AS_SECTION`/`REIMPORT_SONG_SECTION`의 Undo 지원 — 기존에도
+  `ADD_SECTION`/`REMOVE_SECTION`/`UPDATE_SECTION`이 Undo 미지원인 것과
+  같은 이유로 이번에도 만들지 않음(FutureEditor.md D-Editor-4 "아직
+  열려있는 것" 참조, 이미 알려진 gap).
+- `pageStyleDefaults`(재가져오기 시 스타일 유지) — D-022로 이미 보류
+  결정됨. 재가져오기해도 새로 생성되는 Page는 기본 스타일로 만들어진다.
+
+### 변경 파일
+`domain/Section.js`, `domain/Presentation.js`, `store/AppStore.js`,
+`index.html`
+
+### 검증
+Node 테스트 11개:
+- 도메인(7개) — Section+Page 생성/`sourceSongId` 연결, Page가 출처를
+  전혀 모름, 재가져오기 시 전체 교체+위치 유지, 재가져오기 시
+  `isModified` 리셋, Page 수정 시 `isModified` 전환, 일반 Section은
+  영향 없음, 한 번 true면 유지.
+- Store/CommandBus 통합(4개) — `IMPORT_SONG_AS_SECTION` 실행,
+  `UPDATE_PAGE`로 자동 전환, `REIMPORT_SONG_SECTION`으로 전체
+  교체+리셋(다시 뒤집히지 않음), 재가져오기 이후 재수정 시 다시 전환
+  (반복 가능) 확인.
+
+테스트 작성 중 **실제 버그 하나 발견 후 수정**: `IMPORT_SONG_AS_SECTION`
+직후에도 `markModifiedSongSections`가 "새로 생긴 Page"를 변경으로
+오인해 `isModified`를 곧바로 `true`로 만들어버리는 문제 — 처음엔
+`REIMPORT_SONG_SECTION`만 예외 처리했다가, 테스트로 확인하는 과정에서
+`IMPORT_SONG_AS_SECTION`도 같은 문제를 겪는다는 걸 발견해 함께 예외
+처리했다.
+
+`node --check`로 변경된 모든 `.js` 파일 및 `index.html`의 embedded
+module script 문법 검사 통과.
+
+**브라우저 실사용 테스트 필요**: Library → Songs 탭 → "Flow에 추가" →
+CueList에 새 Section이 실제로 나타나는지, Section 목록 모달에서 Page
+텍스트를 수정한 뒤 "⚠ 원본 Song과 달라짐" 표시가 뜨는지, "다시
+가져오기" 후 그 표시가 사라지고 위치가 그대로 유지되는지.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
