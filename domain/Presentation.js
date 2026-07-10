@@ -17,8 +17,8 @@
  */
 
 import { generateId } from '../utils/id.js'
-import { isValidPage } from './Page.js'
-import { isValidSection } from './Section.js'
+import { isValidPage, createTextPage } from './Page.js'
+import { isValidSection, createSection } from './Section.js'
 
 // ─────────────────────────────────────────
 // Presentation 생성
@@ -77,7 +77,15 @@ export function sanitizePresentation(raw) {
   const validSectionMap = {}
   for (const [id, section] of Object.entries(rawSectionMap)) {
     if (isValidSection(section) && section.id === id) {
-      validSectionMap[id] = section
+      // 2026-07-09: sourceSongId/isModified가 없던 시절(2026-07-09 이전)
+      // 저장 데이터도 정상 로드되도록 여기서 기본값을 채운다 — Section.js의
+      // isValidSection()은 이 필드들이 없어도(undefined) 통과시키므로,
+      // 실제 기본값 적용은 이 지점의 책임이다.
+      validSectionMap[id] = {
+        ...section,
+        sourceSongId: section.sourceSongId ?? null,
+        isModified: section.isModified ?? false,
+      }
     } else {
       console.warn('[Presentation] 손상된 Section을 제외하고 복원함:', section)
     }
@@ -362,6 +370,119 @@ export function moveSectionGroup(presentation, sectionId, direction) {
   }
 
   return { ...presentation, pages: newPages, sectionIds: newSectionIds }
+}
+
+// ─────────────────────────────────────────
+// Song 연동 (2026-07-09, D-021)
+// ─────────────────────────────────────────
+
+/**
+ * Library의 Song을 골라 Flow에 새 Section으로 배치한다(D-021).
+ * Song의 각 LyricBlock을 text Page로 변환하고, 새 Section을 만들어
+ * `sourceSongId`로 그 Song을 가리키게 한 뒤, Page들을 `pages[]` 맨
+ * 뒤에 이어 붙인다(위치는 항상 끝 — "+ 섹션"과 동일한 관례, 필요하면
+ * `moveSectionGroup()`으로 나중에 재배치).
+ *
+ * D-021 규칙 2 그대로: 생성된 Page는 `sectionId`만 가질 뿐, 자신이
+ * 어느 Song/LyricBlock에서 왔는지는 전혀 모른다(LyricBlock.label도
+ * Page에 옮기지 않는다 — Page에는 그런 필드가 없다).
+ *
+ * @param {object} presentation
+ * @param {{ id: string, title: string, lyrics: Array<{ text: string }> }} song
+ */
+export function importSongAsSection(presentation, song) {
+  const section = createSection({ title: song.title, sourceSongId: song.id, isModified: false })
+  const pages = song.lyrics.map(block => createTextPage({ text: block.text, sectionId: section.id }))
+
+  let next = addSection(presentation, section)
+  for (const page of pages) {
+    next = addPage(next, page)
+  }
+  return next
+}
+
+/**
+ * "다시 가져오기"(D-021 규칙 3) — 지정한 Section 소속 Page 전체를
+ * 삭제하고, Library의 최신 Song 내용으로 다시 생성해 **같은 위치**에
+ * 끼워 넣는다(전체 교체, 필드 단위 병합 없음). 성공하면 그 Section의
+ * `isModified`를 `false`로 리셋한다(D-021 규칙 5 — 되돌리지 않는 유일한
+ * 예외가 바로 이 동작이다).
+ *
+ * 위치를 그대로 유지하기 위해 `getSectionGroups()`로 현재 그 Section이
+ * 몇 번째 그룹인지 찾아, 그 앞에 있는 그룹들의 Page 개수 합을 삽입
+ * 위치로 쓴다. 유령 Section(직전까지 Page가 있었지만 지금은 0개인 극단
+ * 상황 등)이면 그냥 끝에 추가한다.
+ *
+ * @param {object} presentation
+ * @param {string} sectionId
+ * @param {{ id: string, title: string, lyrics: Array<{ text: string }> }} song
+ */
+export function reimportSongIntoSection(presentation, sectionId, song) {
+  const section = presentation.sectionMap[sectionId]
+  if (!section) return presentation // 존재하지 않는 Section — no-op
+
+  const groups = getSectionGroups(presentation)
+  const groupIndex = groups.findIndex(g => g.sectionId === sectionId)
+  const insertIndex = groupIndex === -1
+    ? presentation.pages.length
+    : groups.slice(0, groupIndex).reduce((sum, g) => sum + g.pages.length, 0)
+
+  const withoutOldPages = presentation.pages.filter(p => p.sectionId !== sectionId)
+  const newPages = song.lyrics.map(block => createTextPage({ text: block.text, sectionId }))
+
+  const pages = [...withoutOldPages]
+  pages.splice(insertIndex, 0, ...newPages)
+
+  return {
+    ...presentation,
+    pages,
+    sectionMap: { ...presentation.sectionMap, [sectionId]: { ...section, isModified: false } },
+  }
+}
+
+/**
+ * Song에서 만들어진 Section의 Page가 조금이라도 바뀌면 `isModified`를
+ * `true`로 표시한다(D-021 규칙 5). 필드 단위로 "무엇이 바뀌었는지"는
+ * 따지지 않는다 — Section 소속 Page 목록(참조 동일성 기준)이 이전과
+ * 하나라도 다르면 그걸로 충분하다(정교한 diff는 D-021이 명시적으로
+ * 피한 복잡도).
+ *
+ * `importSongAsSection()`/`reimportSongIntoSection()` 직후에는 호출하면
+ * 안 된다 — 두 함수 모두 그 Section의 Page 목록을 통째로 새로 만드는
+ * 동작이라, 일반적인 diff 기준으로 보면 반드시 "변경"으로 잡힌다.
+ * 방금 막 생성/리셋한 Section을 곧바로 "수정됨"으로 표시해버리면 안
+ * 되므로(호출부인 `store/AppStore.js`가 액션 타입으로 분기해서 걸러낸다).
+ *
+ * @param {object} prevPresentation
+ * @param {object} nextPresentation
+ * @returns {object} isModified가 갱신된 nextPresentation(변경 없으면 원본 그대로 반환)
+ */
+export function markModifiedSongSections(prevPresentation, nextPresentation) {
+  if (prevPresentation.pages === nextPresentation.pages) return nextPresentation // Page 변경 자체가 없음
+
+  let sectionMap = nextPresentation.sectionMap
+  let changed = false
+
+  for (const id of nextPresentation.sectionIds) {
+    const section = sectionMap[id]
+    if (!section || !section.sourceSongId || section.isModified) continue // Song 출처 없거나 이미 true면 볼 것 없음
+
+    const prevPages = prevPresentation.pages.filter(p => p.sectionId === id)
+    const nextPages = nextPresentation.pages.filter(p => p.sectionId === id)
+    const same =
+      prevPages.length === nextPages.length &&
+      prevPages.every((p, i) => p === nextPages[i])
+
+    if (!same) {
+      if (!changed) {
+        sectionMap = { ...sectionMap }
+        changed = true
+      }
+      sectionMap[id] = { ...section, isModified: true }
+    }
+  }
+
+  return changed ? { ...nextPresentation, sectionMap } : nextPresentation
 }
 
 // ─────────────────────────────────────────

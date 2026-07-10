@@ -29,7 +29,7 @@
  *     Subscriber가 등록되어 있는지 신경 쓰지 않는다.
  */
 
-import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, movePageToSection, setPagePositionAndSection, sanitizePresentation, addSection, removeSection, replaceSection, moveSectionGroup, getSectionGroups as getPresentationSectionGroups } from '../domain/Presentation.js'
+import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, movePageToSection, setPagePositionAndSection, sanitizePresentation, addSection, removeSection, replaceSection, moveSectionGroup, importSongAsSection, reimportSongIntoSection, markModifiedSongSections, getSectionGroups as getPresentationSectionGroups } from '../domain/Presentation.js'
 import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
 import { migrateSnapshot } from '../persistence/Schema.js'
 import { load as storageLoad } from '../persistence/StorageAdapter.js'
@@ -190,8 +190,22 @@ export function subscribe(listener) {
 
 export function dispatch(action) {
   const prev = state
-  const next = reduce(state, action)
+  let next = reduce(state, action)
   if (next === state) return // 변경 없으면 이벤트 생략
+
+  // D-021 규칙 5: Song에서 만들어진 Section(sourceSongId 있음)의 Page가
+  // 조금이라도 바뀌면 isModified를 true로 표시한다.
+  // IMPORT_SONG_AS_SECTION/REIMPORT_SONG_SECTION 자신은 예외 — 두
+  // 액션 모두 "그 Section의 Page 목록을 통째로 새로 만드는" 동작이라,
+  // 일반적인 diff 기준(이전 상태에 없던 Page가 생김)으로 보면 반드시
+  // "변경"으로 잡힌다. 방금 막 생성/리셋한 Section을 곧바로 "수정됨"으로
+  // 표시해버리면 안 되므로 여기서 걸러낸다.
+  if (action.type !== 'IMPORT_SONG_AS_SECTION' && action.type !== 'REIMPORT_SONG_SECTION') {
+    const markedPresentation = markModifiedSongSections(prev.presentation, next.presentation)
+    if (markedPresentation !== next.presentation) {
+      next = { ...next, presentation: markedPresentation }
+    }
+  }
 
   state = next
 
@@ -312,6 +326,23 @@ function reduce(state, action) {
       return {
         ...state,
         presentation: moveSectionGroup(state.presentation, action.sectionId, action.direction),
+      }
+
+    // ── Song 연동 (2026-07-09, D-021) ──────
+    // Song 자체는 이 Store가 알지 못한다(action.song으로 호출부가 통째로
+    // 넘겨준다) — SongStore.js는 Presentation/AppStore와 완전히 독립된
+    // 저장소이기 때문(D-027). 여기서는 domain/Presentation.js의 순수
+    // 변환 함수만 호출한다.
+    case 'IMPORT_SONG_AS_SECTION':
+      return {
+        ...state,
+        presentation: importSongAsSection(state.presentation, action.song),
+      }
+
+    case 'REIMPORT_SONG_SECTION':
+      return {
+        ...state,
+        presentation: reimportSongIntoSection(state.presentation, action.sectionId, action.song),
       }
 
     // ── PresenterState ────────────────────
