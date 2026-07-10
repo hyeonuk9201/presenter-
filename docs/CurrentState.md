@@ -1483,17 +1483,28 @@ Reason/Impact/Dependency/Risk/Completion Criteria 필드 도입), 미완료 P0/P
 선정했다. Library 모달의 Songs 탭은 9-29에서 완성됐지만 Backgrounds/Videos
 탭은 9-18 이후 "준비 중" 빈 메뉴로 남아있었다.
 
-착수 전 `Research/2026-07-05 Library-Centric Workflow.md`를 다시 확인했다
-— 이 문서는 "Media를 Page에 붙이기 전에 Library에 먼저 등록하고 재사용하는"
-전체 재구조화가 `D-002`(Presentation이 Page를 직접 소유)와 정면 충돌하고,
+착수 전 두 가지를 분리해서 확인했다(`TODO.md`의 "Decision과 Research를
+구분하는 기준" 참조 — Decision 충돌 여부만 강제 기준으로 삼고, Research는
+위험 신호/배경 근거로만 쓴다).
+
+**Decision 충돌 여부(강제 기준) — `Decisions.md`의 `D-002`(Presentation이
+Page를 직접 소유)를 확인, 위반하지 않는다.** `D-002`는 "Presentation이
+Page 순서를 직접 관리한다"는 소유 구조에 대한 결정이다. 이번 작업은 그
+구조를 바꾸지 않는다 — 새로 만드는 Page도 기존 `ADD_PAGE`로 `pages[]`
+맨 뒤에 그대로 들어간다.
+
+**Research 참고(강제 아님) — `Research/2026-07-05 Library-Centric
+Workflow.md`.** 이 문서는 "Media를 Page에 붙이기 전에 Library에 먼저
+등록하고 재사용하는" **전체** 재구조화가 `D-002`와 정면 충돌하고
 GC/Persistence 스키마 분리까지 얽힌 더 큰 결정이라 아직 Research 단계로
-남겨뒀다고 명시한다. 다만 이 세션에서 구현한 범위는 그보다 훨씬 좁다 —
-**여러 Presentation이 Asset을 공유**하거나 **Page/Presentation 소유 구조를
-바꾸는 것이 아니라**, 이미 기술적으로는 막혀있지 않았던("mediaId를 공유하는
-것 자체는 막혀있지 않지만 그걸 가능하게 하는 화면이 없다" — 위 Research
-문서 인용) mediaId 재사용을 위한 **화면 하나**를 추가하는 것뿐이다. 새로
-만드는 Page도 기존 `ADD_PAGE`로 `pages[]` 맨 뒤에 들어가 `D-002` 구조를
-그대로 따른다 — 이 경계를 넘지 않는 선에서 착수했다.
+남겨뒀다고 명시한다(문서 1~7행: "Status: Research... 구현 근거로 쓰지
+않는다"). 이 문서 자체는 Decision이 아니므로 착수를 막을 강제력이 없지만,
+"mediaId를 공유하는 것 자체는 막혀있지 않지만 그걸 가능하게 하는 화면이
+없다"(문서 인용)는 지적을 참고해, **여러 Presentation이 Asset을
+공유**하거나 **Page/Presentation 소유 구조를 바꾸는 것**은 하지 않고
+mediaId 재사용을 위한 **화면 하나**만 추가하는 것으로 스스로 범위를
+좁혔다 — Research가 "하지 마라"고 강제한 게 아니라, Research가 보여준
+더 큰 그림 중 지금 필요한 조각만 골라낸 것이다.
 
 ### 구현
 

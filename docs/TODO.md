@@ -37,6 +37,35 @@
 한다. 전체 목록은 [아키텍처 원칙 충돌 항목](#아키텍처-원칙-충돌-항목)
 참조.
 
+**🔍 표시**는 `Research/*.md` 문서가 제기한 위험 신호 때문에 범위를
+좁히거나 착수를 보류한 항목이다 — `Decisions.md`처럼 지켜야 하는
+제약은 **아니다**. 착수 자체를 막지 않으며, 판단은 그때그때 다시 열 수
+있다.
+
+### Decision과 Research를 구분하는 기준 (2026-07-11)
+
+Media Library UI(9-33) 작업 중 Research 문서를 근거로 범위를 좁혔는데,
+"Research가 막았다"와 "Decision이 막았다"가 기록에서 섞이면 나중에
+그 항목이 실제로 강제되는 제약인지 아닌지 헷갈린다. 그래서 아래 세
+규칙을 문서 전반에 적용한다.
+
+1. **Decision 충돌 여부는 `Decisions.md`만 기준으로 판단한다.** 어떤
+   항목이 D-0XX와 충돌하면 ⚠로 표시하고, 착수 전 그 Decision을 먼저
+   재검토(또는 대체 Decision 작성)해야 한다 — 이건 강제다.
+2. **`Research/*.md`는 위험 신호와 배경 근거로만 쓴다.** Research
+   문서는 아직 승인되지 않은 조사/가설이다(`Research/2026-07-05 Library-
+   Centric Workflow.md` 1~7행: "Status: Research... 구현 근거로 쓰지
+   않는다"). Research가 "이렇게 하면 위험하다"고 지적해도, 그 자체로
+   착수를 막는 강제력은 없다 — Decision으로 승격되기 전까지는 참고
+   자료다.
+3. **Research 때문에 범위를 축소하거나 보류할 때는, 그게 "지금 지켜야
+   하는 제약"(Decision 근거)인지 "앞으로 다시 볼 문제"(Research 근거,
+   아직 미확정)인지 항목에 명시한다.** 예: Media Library UI는 `D-002`
+   (Decision) 위반 여부를 확인해 위반하지 않는 선으로 범위를 좁혔고,
+   Research 문서가 지적한 더 큰 질문(여러 Presentation 간 Asset 공유,
+   GC, Persistence 분리)은 Decision이 아니므로 강제하지 않고 "향후
+   검토 사항"으로만 남겼다 — 아래 Media Library UI 항목 참조.
+
 ---
 
 ## 우선순위 로드맵 (미완료 항목만)
@@ -228,8 +257,14 @@
   - Risk: 높음 — 두 개의 독립된 히스토리 체계(Presentation Undo vs Library 비Undo)를 어떻게 공존시킬지에 대한 설계 결정이 없으면 착수 불가.
   - Completion Criteria: 새 Decision으로 Song Undo 범위(어떤 조작까지 되돌릴 수 있는지)를 확정한 뒤, 그 범위만큼 구현 + 회귀 테스트 통과.
 
-- [x] **Media Library UI** — 9-33에서 완료
-  - Priority(당시): P1 · Status: 완료 · Reason: Library 모달의 Songs 탭은 완성됐지만(9-29) Backgrounds/Videos 탭은 9-18 이후 빈 메뉴로 남아있었음 · Impact: `media/MediaStore.js`(`list()` 신규), `index.html`(Library 모달) · Dependency: 없음(`MediaStore.js` 이미 존재, `D-027`로 Song과 이미 분리) · Risk: 낮음(이미 검증됨, 착수 전 `Research/2026-07-05 Library-Centric Workflow.md`와 `D-002` 재확인 — 여러 Presentation 간 Asset 공유가 아닌 "Page 생성 시 기존 mediaId를 재사용하는 화면"으로 범위를 좁혀 `D-002` 경계 안에서 구현) · Completion Criteria: Backgrounds/Videos 탭에서 목록/추가/삭제 동작 + "Flow에 추가"로 기존 mediaId를 재사용하는 새 Page 생성 확인(충족, 9-33). `media/MediaStore.test.js` 5건 + Playwright 브라우저 E2E 18건으로 검증.
+- [x] **Media Library UI** — 9-33에서 완료 🔍(Research 근거로 범위 축소, Decision 충돌 아님)
+  - Priority(당시): P1 · Status: 완료
+  - Reason: Library 모달의 Songs 탭은 완성됐지만(9-29) Backgrounds/Videos 탭은 9-18 이후 빈 메뉴로 남아있었음.
+  - Impact: `media/MediaStore.js`(`list()` 신규), `index.html`(Library 모달).
+  - Dependency: 없음(`MediaStore.js` 이미 존재, `D-027`로 Song과 이미 분리).
+  - Risk: 낮음(이미 검증됨). **Decision 충돌 여부(강제 기준) — 착수 전 `D-002`(Presentation이 Page를 직접 소유)를 확인, 위반하지 않음**: 이번 구현은 Page/Presentation 소유 구조를 바꾸지 않고 "Page 생성 시 기존 mediaId를 재사용하는 화면"만 추가했으므로 `D-002` 경계 안이다. **Research 참고(강제 아님) — `Research/2026-07-05 Library-Centric Workflow.md`**가 지적한 더 큰 위험(여러 Presentation 간 Asset 공유, GC 정책, Persistence 스키마 분리를 요구하는 전체 "Library-centric" 재구조화)은 아직 Decision으로 승격되지 않은 조사 단계라 이번 구현 여부를 막을 강제력은 없었다 — 다만 그 방향으로 확장할 때 실제로 부딪힐 문제라는 배경 정보로 참고해 범위를 스스로 좁혔다(아래 향후 검토 사항 참조).
+  - Completion Criteria: Backgrounds/Videos 탭에서 목록/추가/삭제 동작 + "Flow에 추가"로 기존 mediaId를 재사용하는 새 Page 생성 확인(충족, 9-33). `media/MediaStore.test.js` 5건 + Playwright 브라우저 E2E 18건으로 검증.
+  - **향후 검토 사항(Research 단계, Decision 아님)**: 여러 Presentation이 하나의 Media Asset을 공유하는 것, GC(미사용 Asset 정리) 도입, Persistence 스키마를 Presentation/Library로 분리하는 것 — 전부 `Research/2026-07-05 Library-Centric Workflow.md`의 열린 질문으로 남아있고, 이번 작업으로 해소되지 않았다. 이 방향으로 확장하려면 `D-002`를 다시 여는 별도 Decision이 먼저 필요하다.
 
 - [x] **Section 추가 버튼의 `prompt()` 취약점** — 9-32에서 근본 해결
   - Priority(당시): P0 · Status: 완료 · Reason: **(2026-07-06 실사용 중 발견)** 브라우저가 `prompt()`/`alert()` 반복 호출을 감지하면 "추가 대화상자 차단" 체크박스를 띄우는데, 실수로 체크하면 이후 프롬프트가 즉시 `null`을 반환해 버튼이 안 먹는 것처럼 보이는 실사용 버그(보안 취약점이라기보다 UX 장애에 가까웠으나 근본 원인은 네이티브 API 의존) · Impact: `index.html`(Section 추가/스타일 프리셋 저장 두 호출부) · Dependency: 없음 · Risk: 낮음(부분 대응 3회 거친 뒤 근본 해결, node:test 회귀 가드 4건 + Playwright 브라우저 E2E 17건으로 검증됨) · Completion Criteria: 부분 대응(9-20, 9-21, 토스트 안내/자동 배정)에 이어, 9-32에서 `showTextPrompt()`(인앱 모달)로 교체해 `prompt()` 자체를 제거(충족) — 네이티브 dialog 미발생을 자동화 테스트로 확인.
