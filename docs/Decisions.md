@@ -1179,3 +1179,95 @@ Persistence/History 구조 자체도 무수정.
 → Decision → Implementation 원칙에 따라 스캐폴딩 전 이 Decision을
 먼저 기록).
 
+# D-029
+
+## 문서 간 우선순위 판단 기준 — DocumentationHierarchy.md 채택
+
+### 결정
+
+`docs/DocumentationHierarchy.md`(2026-07-11 Draft로 커밋, `febfe7c`)를
+문서 간 역할/우선순위 판단의 공식 기준으로 채택한다. 문서 Status
+헤더를 "Draft / 제안(Decision 아님)"에서 "Confirmed by D-029"로
+변경한다.
+
+다만 이 채택은 균일하지 않다 — 실제로 검증된 부분과 아직 검증되지
+않은 부분을 구분해서 채택한다.
+
+**강제(검증됨)**:
+1. `Decisions.md`(D-0XX)만 아키텍처 충돌 판단의 유일한 기준이다.
+   `Research/*.md`는 위험 신호/배경 근거일 뿐 강제력이 없다(2026-07-11
+   대화에서 이미 확정, `TODO.md` 필드 정의 절에 기록됨 — 이 Decision이
+   그 확정을 `Decisions.md`로 승격하는 것이기도 하다).
+2. 새 작업 착수 전 충돌 여부를 판단하는 순서는 항상 `Decisions.md`
+   확인이 먼저다(`DocumentationHierarchy.md`의 "충돌 시 해석 순서"
+   1단계).
+
+**참고(구조는 유지하되 개별 검증 필요, 실사용으로 반박되기 전까지
+잠정 채택)**:
+3. `DocumentationHierarchy.md`의 Tier 1~5 분류(Architecture 계열/
+   Vocabulary/Conventions/FutureDomain·FutureEditor/Research/TODO/
+   CurrentState/ManualTestChecklist)와 "충돌 시 해석 순서" 2~5단계는
+   그대로 유지한다 — 다만 이 부분들은 아직 실제 충돌 상황에서
+   검증되지 않았다(아래 "이유" 참조). `*Architecture.md` 15개 파일
+   개별 현재/Phase 2 여부, `Conventions.md`의 Tier 배치, `AI
+   Development Workflow.md`의 "곁가지" 취급도 마찬가지로 구조는
+   유지하되 잠정이다.
+
+### 이유
+
+2026-07-11 커밋(`febfe7c`) 이후 두 세션에서 이 초안의 판단 순서를
+실제로 적용했다.
+
+- **9-34(스타일 프리셋 업데이트/덮어쓰기)**: "착수 전
+  `docs/DocumentationHierarchy.md`(Draft)의 판단 순서를 그대로
+  적용했다 — Decision 충돌 여부만 `Decisions.md` 기준으로 확인했다"
+  (`CurrentState.md` 9-34). `D-023` Non-goal과의 충돌 가능성을
+  구조적으로 배제하고 착수, 마찰 없이 완료.
+- **9-35(Transition)**: "착수 전 `Decisions.md`를 확인했으나
+  Transition/애니메이션과 관련된 D-0XX는 없었다 — Decision 충돌
+  없음. `docs/DocumentationHierarchy.md`(Draft)의 판단 순서를 그대로
+  적용했고, 이번에도 마찰 없이 적용됐다"(`CurrentState.md` 9-35).
+
+두 세션 모두 "강제(검증됨)" 두 항목(위 1, 2번)만 실제로 사용됐다 —
+`Decisions.md`를 먼저 확인하고, 관련 Decision이 있으면 그 경계 안에서
+범위를 좁히거나(9-34), 없으면 충돌 없음으로 판단하고 진행했다(9-35).
+두 번 다 "수정·보완할 점을 찾지 못했다"(사용자 확인, 2026-07-11)는
+점에서, 이 핵심 판단 순서를 잠정 상태로 계속 두는 것보다 확정하는
+쪽이 낫다고 판단했다.
+
+반면 Tier 1의 세부 분류, `FutureDomain.md`/`FutureEditor.md` 간
+우선순위, "충돌 시 해석 순서"의 2~5단계는 이 두 세션 어디에서도
+실제로 쓰이지 않았다(둘 다 Decision 확인 단계에서 판단이 끝났고,
+Architecture 계열 문서나 Future*.md를 참조할 필요 자체가 없었다). 이
+부분까지 같은 확신으로 "검증됨"이라고 말하는 건 근거를 부풀리는
+것이다 — `DocumentationHierarchy.md`가 이미 "확인이 필요한 부분"
+절에서 스스로 밝혔던 한계이기도 하다. 구조 자체(Tier 배치, 표)는
+쓸모가 있으므로 폐기하지 않고, 검증 수준만 정직하게 구분해서
+채택한다.
+
+### Non-goal
+
+- Tier 1의 개별 `*Architecture.md` 15개 파일이 "현재 구현과 일치"인지
+  "Phase 2 목표"인지 지금 전수 조사하지 않는다 — 이 Decision의 범위가
+  아니다.
+- `Conventions.md`의 Tier 배치를 지금 재검토하지 않는다.
+- "충돌 시 해석 순서" 2~5단계를 지금 추가로 검증하지 않는다 — 실제로
+  그 단계가 필요한 충돌 상황이 생기면 그때 확인한다.
+
+### 결과
+
+`docs/DocumentationHierarchy.md`의 Status 헤더를 "Draft / 제안
+(Decision 아님)"에서 "Confirmed by D-029(강제 항목은 위 1, 2번 —
+나머지 Tier 구조는 잠정 채택, 아래 참조)"로 갱신한다. "확인이 필요한
+부분" 절은 유지하되 "이 문서 자체를 Decisions.md로 승격할지" 항목만
+이 Decision으로 해소됐다고 표시한다.
+
+향후 Tier 1(Architecture 계열)이나 `FutureDomain.md`/`FutureEditor.md`
+순서가 실제로 쓰이는 세션이 생기면, 그 세션의 `CurrentState.md`
+기록에 "DocumentationHierarchy.md의 Tier N을 실제로 참조함"이라고
+남겨 검증 사례를 계속 쌓는다 — 마찰이 발견되면 이 Decision을 개정한다.
+
+관련 문서: `docs/DocumentationHierarchy.md`, `docs/TODO.md`의 필드
+정의 절("Decision과 Research를 구분하는 기준"), `CurrentState.md`
+9-34/9-35.
+
