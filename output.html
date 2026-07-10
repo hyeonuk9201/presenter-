@@ -96,6 +96,15 @@
   // 문제가 생긴다 — CLEAR도 같은 큐에 태워 도착 순서대로 처리한다.
   let renderQueue = Promise.resolve()
 
+  // 현재 표시 중인 .slide DOM 참조(Transition, 2026-07-11, TODO.md P2 항목).
+  // container.querySelector로 "이전 슬라이드"를 다시 찾지 않는 이유: fade
+  // 진행 중(이전 슬라이드가 페이드아웃 대기 중이라 아직 DOM에 남아있는
+  // 상태)에 다음 SHOW_PAGE가 연달아 도착하면, DOM 순서 기준 조회는 아직
+  // 안 지워진 "그 이전 이전" 슬라이드를 잘못 집어올 수 있다 — JS 변수로
+  // "지금 진짜 보여지고 있는 슬라이드"를 직접 추적해야 연속 전환에서도
+  // 정확하다.
+  let currentSlideEl = null
+
   function showPage(page) {
     renderQueue = renderQueue.then(() => renderPage(page)).catch(() => {})
   }
@@ -112,8 +121,55 @@
     }
 
     // resolve가 끝난 뒤에만 화면을 교체한다 — 그 전까지는 직전 화면 유지.
-    container.innerHTML = ''
-    container.appendChild(createPageView(page, media))
+    const newSlide = createPageView(page, media)
+
+    // type이 'fade'이고 페이드해 들어올 대상(직전 슬라이드)이 실제로
+    // 있을 때만 크로스페이드한다. 'none'/'cut'/미인식 값이거나 STANDBY
+    // 직후 첫 Page라면(currentSlideEl이 없음) 기존과 동일한 즉시 교체
+    // (cut)로 처리한다 — 지금까지의 기본 동작을 그대로 보존한다.
+    const isFade = page.transition?.type === 'fade' && currentSlideEl
+
+    if (isFade) {
+      crossfadeToSlide(newSlide, page.transition.duration ?? 300)
+    } else {
+      container.innerHTML = ''
+      container.appendChild(newSlide)
+    }
+
+    currentSlideEl = newSlide
+  }
+
+  /**
+   * 이전 슬라이드 위에 새 슬라이드를 opacity 0으로 겹쳐 놓고 CSS
+   * transition으로 1까지 올린 뒤, duration 후 이전 슬라이드를 제거한다.
+   * 두 슬라이드가 같은 자리에 겹쳐야 하므로 이 전환 동안만 position을
+   * absolute로 바꾼다(view/slide.css의 .slide 기본값은 relative — 평소
+   * 한 번에 하나만 있을 때는 그걸로 충분하고, 이 파일은 크로스페이드가
+   * 필요한 순간에만 인라인 스타일로 겹쳐 놓는다. 공용 CSS는 건드리지
+   * 않는다 — index.html의 PreviewPanel도 같은 .slide 클래스를 쓴다).
+   */
+  function crossfadeToSlide(newSlide, duration) {
+    const previousSlide = currentSlideEl
+
+    newSlide.style.position = 'absolute'
+    newSlide.style.inset = '0'
+    newSlide.style.opacity = '0'
+    newSlide.style.transition = `opacity ${duration}ms ease`
+    previousSlide.style.position = 'absolute'
+    previousSlide.style.inset = '0'
+
+    container.appendChild(newSlide)
+    void newSlide.offsetWidth // 강제 리플로우 — 없으면 브라우저가 opacity 0→1을 한 프레임에 묶어 애니메이션이 생략될 수 있다
+    newSlide.style.opacity = '1'
+
+    setTimeout(() => {
+      // 이 사이에 또 다른 전환이 연달아 일어나 currentSlideEl이 이미
+      // 다음 슬라이드로 바뀌었을 수 있다 — 그 최신 슬라이드는 절대
+      // 건드리지 않고, 이 전환이 책임지는 previousSlide 하나만 정리한다.
+      if (previousSlide.parentNode === container && previousSlide !== currentSlideEl) {
+        container.removeChild(previousSlide)
+      }
+    }, duration)
   }
 
   /**
@@ -138,6 +194,7 @@
   function showStandby() {
     container.innerHTML = ''
     container.appendChild(standby)
+    currentSlideEl = null // STANDBY로 돌아가면 "이전 슬라이드"가 없어진다 — 다음 Page는 항상 즉시 교체(cut)로 시작
   }
 </script>
 </body>

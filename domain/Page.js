@@ -19,21 +19,30 @@ import { generateId } from '../utils/id.js'
  * 모양으로 가진다 — Element 모델(DomainEntityArchitecture.md 참조) 없이도
  * 플랫 구조에 안전하게 얹을 수 있는 필드다(아키텍처 리뷰 2026-07-03 결론).
  *
- * 지금은 값만 존재하고 아무것도 소비하지 않는다:
- *   - view/PageView.js는 transition을 읽지 않는다 — Page 전환 시 항상
- *     즉시 교체(cut)된다. type:'fade'를 넣어도 실제로 fade 되지 않는다.
- *   - autoAdvance를 구독해 다음 Page로 자동 전환하는 타이머/로직이 없다.
- *     enabled:true로 저장해도 아무 일도 일어나지 않는다.
+ * transition은 output.html이 실제로 읽는다(2026-07-11, TODO.md
+ * "Transition" 항목) — SHOW_PAGE로 이 Page가 표시될 때 type이 'fade'면
+ * 직전 슬라이드와 크로스페이드하고, 'none'/'cut'/미인식 값이면 기존과
+ * 동일하게 즉시 교체(cut)한다(output.html의 renderPage()/
+ * crossfadeToSlide() 참조). view/PageView.js 자신은 여전히 transition을
+ * 읽지 않는다 — DOM 생성만 책임지고, 교체 방식(즉시 vs 페이드)은
+ * 호출부(output.html)의 책임으로 남겨뒀다(PageView.js 파일 헤더 규칙
+ * "DOM에 붙이지 않는다. 붙이는 건 호출한 쪽의 책임"과 같은 이유).
+ * index.html의 `ui/PreviewPanel.js`는 아직 transition을 읽지 않는다 —
+ * 매 상태 변경마다 재렌더링되는 구조라(편집 중 키 입력마다도 재실행)
+ * 페이드를 넣으면 편집 중에도 계속 재생돼 오히려 방해가 된다, 실제
+ * "송출"(Core Philosophy)에 해당하는 output.html만 범위로 한정했다.
  *
- * 이 필드들이 실제로 뭔가를 하게 만드는 건 후속 단계다. 지금 목적은
- * "나중에 UI/렌더러가 이 필드를 읽기 시작해도 Page 스키마 자체는 안
- * 바뀌게" 미리 자리를 잡아두는 것뿐이다 — Undo/Redo(Page 전체 스냅샷
- * diff)와 Persistence(Page를 통째로 저장)는 새 필드가 늘어나도 이미
- * 자동으로 대응하므로, 여기 추가하는 것만으로 그 두 곳은 손 안 대도 된다.
+ * autoAdvance는 여전히 값만 존재하고 아무것도 소비하지 않는다 — 구독해
+ * 다음 Page로 자동 전환하는 타이머/로직이 없다. enabled:true로 저장해도
+ * 아무 일도 일어나지 않는다(별도 TODO.md 항목, 이번 범위 밖).
+ *
+ * Undo/Redo(Page 전체 스냅샷 diff)와 Persistence(Page를 통째로 저장)는
+ * 새 필드가 늘어나도 이미 자동으로 대응하므로, 여기 추가하는 것만으로
+ * 그 두 곳은 손 안 대도 된다.
  */
 function createBehaviorDefaults({ transition, autoAdvance } = {}) {
   return {
-    // 'none' | 'fade' | 'cut' — 값만 존재, 렌더러가 아직 안 읽음
+    // 'none' | 'fade' | 'cut' — output.html이 소비한다(위 설명 참조)
     transition: {
       type: transition?.type ?? 'none',
       duration: transition?.duration ?? 300, // ms

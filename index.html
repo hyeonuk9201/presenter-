@@ -780,6 +780,13 @@
             <input type="text" class="style-text-input" id="page-label" placeholder="예: worship-intro.mp4">
           </div>
           <div class="style-row">
+            <div class="sidebar-label">전환 <span style="text-transform:none;font-weight:400;">(Output 화면 기준)</span></div>
+            <select class="style-select" id="page-transition">
+              <option value="none">즉시 전환</option>
+              <option value="fade">페이드</option>
+            </select>
+          </div>
+          <div class="style-row">
             <div class="sidebar-label">정렬</div>
             <select class="style-select" id="h-align">
               <option value="center">가운데</option>
@@ -1872,6 +1879,7 @@
     const fontWeight = document.getElementById('font-weight').value
     const textStroke = Number(document.getElementById('text-stroke').value)
     const textShadow = document.getElementById('text-shadow').checked
+    const transition = { type: transitionEl.value }
 
     importLyrics(raw, {
       horizontalAlign: hAlign,
@@ -1882,6 +1890,7 @@
       fontWeight,
       textStroke,
       textShadow,
+      transition,
     }).forEach(page => execute({ type: 'ADD_PAGE', payload: { page } }))
 
     document.getElementById('lyrics-input').value = ''
@@ -1940,6 +1949,7 @@
 
     const text = document.getElementById('lyrics-input').value
     const label = document.getElementById('page-label').value
+    const transitionType = transitionEl.value
     const horizontalAlign = document.getElementById('h-align').value
     const verticalAlign = document.getElementById('v-align').value
     const fontSize = Number(document.getElementById('font-size').value)
@@ -1951,7 +1961,12 @@
 
     execute({
       type: 'UPDATE_PAGE',
-      payload: { page: { ...page, text, label, horizontalAlign, verticalAlign, fontSize, lineHeight, color, fontWeight, textStroke, textShadow } },
+      payload: {
+        page: {
+          ...page, text, label, horizontalAlign, verticalAlign, fontSize, lineHeight, color, fontWeight, textStroke, textShadow,
+          transition: { ...page.transition, type: transitionType },
+        },
+      },
     })
   })
 
@@ -1963,6 +1978,7 @@
   const importBtn = document.getElementById('import-btn')
   const lyricsInput = document.getElementById('lyrics-input')
   const pageLabelInput = document.getElementById('page-label')
+  const transitionEl = document.getElementById('page-transition')
   const hAlignEl = document.getElementById('h-align')
   const vAlignEl = document.getElementById('v-align')
   const fontWeightEl = document.getElementById('font-weight')
@@ -2125,6 +2141,7 @@
       // 수정 모드: 선택된 Page 내용 로드
       lyricsInput.value = page.text ?? ''
       pageLabelInput.value = page.label ?? ''
+      transitionEl.value = page.transition?.type ?? 'none'
       hAlignEl.value = page.horizontalAlign ?? 'center'
       vAlignEl.value = page.verticalAlign ?? 'bottom'
       fontWeightEl.value = page.fontWeight ?? 'normal'
@@ -2146,6 +2163,7 @@
       // 추가 모드: 입력 영역 + 스타일 초기화
       lyricsInput.value = ''
       pageLabelInput.value = ''
+      transitionEl.value = 'none'
       hAlignEl.value = 'center'
       vAlignEl.value = 'bottom'
       fontWeightEl.value = 'normal'
