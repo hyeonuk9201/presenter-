@@ -1329,6 +1329,90 @@ CueList에 새 Section이 실제로 나타나는지, Section 목록 모달에서
 텍스트를 수정한 뒤 "⚠ 원본 Song과 달라짐" 표시가 뜨는지, "다시
 가져오기" 후 그 표시가 사라지고 위치가 그대로 유지되는지.
 
+## 9-31. Song Library 삭제 2단계 확인 버그 수정 + Song 핵심 로직 회귀 테스트 추가 (2026-07-10)
+
+### 배경
+
+9-29/9-30에서 남겨둔 브라우저 실사용 테스트를 진행하기 전에, 코드
+레벨에서 먼저 점검했다. 그 과정에서 Song Library 모달의 2단계 삭제
+확인 상태가 모달을 닫았다 열어도 초기화되지 않는 버그를 발견했다 —
+Section 목록 모달(9-22)은 열 때마다 `pendingDeleteSectionId`를
+리셋하는데, Song Library 모달만 이 리셋이 빠져 있었다.
+
+### 원인
+
+`index.html`의 `library-btn` 클릭 핸들러가 `libraryModal.style.display
+= 'flex'`와 `renderSongList()`만 호출하고 `pendingDeleteSongId`를
+리셋하지 않았다. 삭제 1단계("삭제" 클릭 → "정말 삭제?")를 진행한 뒤
+확인하지 않고 모달을 닫았다가 다시 열면, 그 곡 행이 여전히 "정말
+삭제?" 상태로 남아 한 번의 클릭만으로 확인 없이 삭제될 수 있었다 —
+2단계 확인이라는 안전장치가 무력화되는 상황.
+
+### 수정
+
+`library-btn` 클릭 핸들러 맨 앞에 `pendingDeleteSongId = null`을
+추가해, Section 목록 모달과 동일하게 "열 때마다 리셋"하도록 맞췄다.
+Section 삭제 로직(`pendingDeleteSectionId` 관련 코드)은 건드리지
+않았다.
+
+### 회귀 테스트 추가
+
+`D-028` 이후 이 프로젝트의 검증 방식이 "임시 스크립트 후 삭제"에서
+"영속 테스트 축적"으로 바뀐 것에 따라, 이번 수정과 코드 리뷰에서 함께
+다룬 Song 핵심 로직을 전부 영속 테스트로 남겼다:
+
+- `index.test.js`(신규) — `index.html`은 비-모듈 거대 스크립트라 실제
+  DOM 실행 테스트는 범위 밖(`D-028`)이지만, "이 수정이 소스에서 다시
+  사라지지 않는지"만 감시하는 소스 레벨 회귀 가드 2개를 작성했다.
+  수정 전 상태를 메모리상에서 시뮬레이션해 이 가드가 실제로
+  실패했을 것임을 확인했다(인과관계 검증).
+- `domain/Presentation.test.js`(신규) — `importSongAsSection`/
+  `reimportSongIntoSection` 9개 케이스. "가사 0개 Song → 유령
+  Section이 되는" 엣지 케이스, "앞뒤 Section 사이 위치 유지" 케이스를
+  포함한다. 아직 Song 연동 함수만 다루며, `Presentation.js`의 나머지
+  함수(`movePage` 등)는 범위 밖으로 남겨뒀다.
+- `store/SongStore.test.js`(신규) — Song CRUD 8개 케이스(localStorage
+  실제 저장 확인, 손상 데이터 부분/전체 복구, JSON 파싱 실패 폴백
+  포함). `SongStore.js`가 모듈 로드 시점에 1회만 state를 읽는 구조라,
+  테스트마다 쿼리스트링(`?case=N`)으로 매번 새 모듈 인스턴스를
+  import하는 방식을 썼다.
+
+`npm test` 33개 전부 통과.
+
+### 코드 리뷰 중 추가로 확인한 것 (버그 아님, 확인만 하고 넘어감)
+
+- 가사 없는 Song으로 "Flow에 추가"/"다시 가져오기"를 하면 Page 0개짜리
+  유령 Section이 될 수 있다 — `D-021`의 "전체 Replace" 규칙대로
+  의도된 동작이라 버그는 아니지만, 화면엔 아무 변화 없어 보여서
+  실사용 중 헷갈릴 수 있는 지점이라 `ManualTestChecklist.md`에
+  시나리오로 남겨뒀다.
+- `isModified`가 한 번 `true`가 되면 Undo로 Page를 되돌려도 다시
+  `false`로 안 돌아가는 것 — `D-021` 규칙 5 그대로, 의도된 동작이다.
+- Song 섹션의 Page가 `pages[]` 배열 상에서 여러 조각으로 흩어지면
+  `reimportSongIntoSection()`의 위치 계산이 꼬일 수 있다고 의심했으나,
+  `movePage()`/`movePageToSection()`의 "인접 Page의 sectionId 자동
+  흡수" 규칙(D-Editor-4 규칙 5) 때문에 애초에 그런 상태 자체가
+  구조적으로 발생할 수 없음을 직접 시나리오로 재현해 확인했다 —
+  문제 없음.
+
+### 브라우저 실사용 확인 (2026-07-10)
+
+`ManualTestChecklist.md`에 남아있던 9-29/9-30의 미확인 항목(Song
+Library CRUD, Flow에 추가, 재가져오기) 전부 브라우저에서 직접 확인,
+이상 없음 — 위에서 고친 `pendingDeleteSongId` 버그도 포함해서
+재확인됐다. `ManualTestChecklist.md`의 "확인 필요" 섹션을 비우고
+"확인 완료" 섹션으로 옮겼다.
+
+### 변경 파일
+
+`index.html`(1줄), `index.test.js`(신규), `domain/Presentation.test.js`
+(신규), `store/SongStore.test.js`(신규), `docs/ManualTestChecklist.md`
+
+### 다음 단계
+
+TODO.md의 나머지 열린 항목(Media Library UI, `prompt()` 취약점,
+Transition/Auto Advance 등) 중 선택.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
