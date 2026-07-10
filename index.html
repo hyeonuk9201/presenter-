@@ -772,6 +772,7 @@
           <div class="style-row style-preset-actions">
             <button class="btn btn-ghost" id="style-preset-apply-btn">적용</button>
             <button class="btn btn-ghost" id="style-preset-save-btn">새로 저장</button>
+            <button class="btn btn-ghost" id="style-preset-update-btn">덮어쓰기</button>
             <button class="btn btn-ghost" id="style-preset-delete-btn">삭제</button>
           </div>
           <div class="style-row">
@@ -954,7 +955,7 @@
   import { createSection } from './domain/Section.js'
   import { createStylePreset } from './domain/StylePreset.js'
   import { createSong, createLyricBlock } from './domain/Song.js'
-  import { getStylePresets, addStylePreset, removeStylePreset } from './store/AppSettingsStore.js'
+  import { getStylePresets, addStylePreset, updateStylePreset, removeStylePreset } from './store/AppSettingsStore.js'
   import { getSongs, getSongById, addSong, updateSong, removeSong } from './store/SongStore.js'
   import { getState, getSelectedPage, subscribe, registerSubscriber, getSectionGroups } from './store/AppStore.js'
   import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
@@ -1982,6 +1983,7 @@
   const presetSelect = document.getElementById('style-preset-select')
   const presetApplyBtn = document.getElementById('style-preset-apply-btn')
   const presetSaveBtn = document.getElementById('style-preset-save-btn')
+  const presetUpdateBtn = document.getElementById('style-preset-update-btn')
   const presetDeleteBtn = document.getElementById('style-preset-delete-btn')
   let pendingDeletePresetId = null
 
@@ -2053,6 +2055,36 @@
     renderStylePresetOptions()
     presetSelect.value = preset.id
     showToast(`"${preset.name}" 프리셋을 저장했습니다.`)
+  })
+
+  // "덮어쓰기"(2026-07-11, TODO.md P2 항목) — 선택된 프리셋의 id/name은
+  // 그대로 두고 서식 값만 사이드바 현재 값으로 교체한다. D-023 Non-goal
+  // ("스타일 변경 시 기존에 적용됐던 Page를 일괄 업데이트하는 기능 지원
+  // 안 함")과 충돌하지 않도록, 범위를 "프리셋 정의 자체 값 교체"로만
+  // 한정한다 — Page는 프리셋과 어떤 참조도 갖지 않으므로(Page.presetId
+  // 필드 자체가 없음, D-023) 이미 적용된 Page에 소급 반영될 경로가
+  // 애초에 존재하지 않는다. "적용"과 마찬가지로 값 복사 원칙을 그대로
+  // 따른다 — 여기서 새 커밋 경로를 만들지 않는다.
+  presetUpdateBtn.addEventListener('click', () => {
+    const existing = getStylePresets().find(p => p.id === presetSelect.value)
+    if (!existing) {
+      showToast('덮어쓸 프리셋을 먼저 선택하세요.')
+      return
+    }
+    updateStylePreset({
+      ...existing,
+      horizontalAlign: hAlignEl.value,
+      verticalAlign: vAlignEl.value,
+      fontWeight: fontWeightEl.value,
+      fontSize: Number(fontSizeInput2.value),
+      lineHeight: Number(lineHeightInput2.value),
+      color: colorInput2.value,
+      textStroke: Number(textStrokeInput2.value),
+      textShadow: textShadowInput2.checked,
+    })
+    renderStylePresetOptions()
+    presetSelect.value = existing.id
+    showToast(`"${existing.name}" 프리셋을 현재 값으로 덮어썼습니다.`)
   })
 
   presetDeleteBtn.addEventListener('click', () => {
