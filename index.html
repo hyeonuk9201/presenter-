@@ -1169,6 +1169,7 @@
   // ── 라이브러리 모달 (2026-07-05 뼈대, 2026-07-09 Songs 실기능 연결) ──
   const libraryModal = document.getElementById('library-modal')
   document.getElementById('library-btn').addEventListener('click', () => {
+    pendingDeleteSongId = null // Section 목록 모달과 동일하게, 열 때마다 2단계 삭제 확인 상태를 리셋한다
     libraryModal.style.display = 'flex'
     renderSongList()
   })
