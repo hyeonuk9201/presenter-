@@ -897,6 +897,28 @@
   </div>
 </div>
 
+<!-- 이름 입력 모달 (2026-07-11, TODO.md "prompt() 취약점" 근본 해결) —
+     Section 추가/스타일 프리셋 저장이 쓰던 브라우저 네이티브 prompt()를
+     대체하는 범용 모달. prompt()와 동일하게 "취소=null, 확인=입력값"
+     계약을 유지한다(showTextPrompt() 참조). -->
+<div id="text-prompt-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="width:400px;">
+    <div class="modal-header">
+      <span id="text-prompt-title">이름 입력</span>
+      <button id="text-prompt-close-btn" class="btn btn-ghost">닫기</button>
+    </div>
+    <div class="modal-body">
+      <div class="style-row">
+        <input type="text" class="style-text-input" id="text-prompt-input">
+      </div>
+      <div class="style-row" style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-ghost" id="text-prompt-cancel-btn">취소</button>
+        <button class="btn btn-primary" id="text-prompt-confirm-btn">확인</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Section 목록 모달 (2026-07-06) — 빈 Section("유령 Section") 확인/삭제용 -->
 <div id="section-list-modal" class="modal-overlay" style="display:none">
   <div class="modal-box">
@@ -1121,15 +1143,63 @@
     }
   })
 
+  // ── 이름 입력 모달 (2026-07-11, TODO.md "prompt() 취약점" 근본 해결) ──
+  // 브라우저는 alert()/confirm()/prompt()를 반복 호출하면 "이 페이지가
+  // 추가 대화상자를 만들지 못하게 차단" 체크박스를 띄우는데, 사용자가
+  // 실수로 체크하면 그 이후 prompt() 호출이 즉시 null을 반환해버려
+  // 버튼이 안 먹는 것처럼 보인다. Section 추가와 스타일 프리셋 저장 두
+  // 곳이 이 위험을 공유하고 있어(원래는 prompt() 각자 호출), 인앱
+  // 모달 하나로 통일한다. prompt()와 동일한 반환 계약(취소 시 null,
+  // 확인 시 입력 문자열)을 유지해 호출부 수정을 최소화했다.
+  const textPromptModal = document.getElementById('text-prompt-modal')
+  const textPromptTitle = document.getElementById('text-prompt-title')
+  const textPromptInput = document.getElementById('text-prompt-input')
+  const textPromptCloseBtn = document.getElementById('text-prompt-close-btn')
+  const textPromptCancelBtn = document.getElementById('text-prompt-cancel-btn')
+  const textPromptConfirmBtn = document.getElementById('text-prompt-confirm-btn')
+
+  function showTextPrompt({ title, defaultValue = '' }) {
+    return new Promise(resolve => {
+      textPromptTitle.textContent = title
+      textPromptInput.value = defaultValue
+      textPromptModal.style.display = 'flex'
+      textPromptInput.focus()
+      textPromptInput.select()
+
+      function cleanup(result) {
+        textPromptModal.style.display = 'none'
+        textPromptConfirmBtn.removeEventListener('click', onConfirm)
+        textPromptCancelBtn.removeEventListener('click', onCancel)
+        textPromptCloseBtn.removeEventListener('click', onCancel)
+        textPromptModal.removeEventListener('click', onOverlayClick)
+        textPromptInput.removeEventListener('keydown', onKeydown)
+        resolve(result)
+      }
+      function onConfirm() { cleanup(textPromptInput.value) }
+      function onCancel() { cleanup(null) }
+      function onOverlayClick(e) { if (e.target === textPromptModal) onCancel() } // 바깥 클릭 = 취소
+      function onKeydown(e) {
+        if (e.key === 'Enter') { e.preventDefault(); onConfirm() }
+        else if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+      }
+
+      textPromptConfirmBtn.addEventListener('click', onConfirm)
+      textPromptCancelBtn.addEventListener('click', onCancel)
+      textPromptCloseBtn.addEventListener('click', onCancel)
+      textPromptModal.addEventListener('click', onOverlayClick)
+      textPromptInput.addEventListener('keydown', onKeydown)
+    })
+  }
+
   // ── Section 추가 (D-Editor-4, 2026-07-06 — 9-13 최소 UI 갱신) ──
-  // "메뉴만 만들어놔도 좋다"는 스코프에 맞춰 prompt()로 제목만 받는
-  // 최소 구현은 유지한다. 색상/메모 편집 UI는 범위 밖(TODO.md에 등록).
+  // "메뉴만 만들어놔도 좋다"는 스코프에 맞춰 제목만 받는 최소 구현은
+  // 유지한다. 색상/메모 편집 UI는 범위 밖(TODO.md에 등록).
   //
   // D-Editor-4로 Section이 더 이상 startPageId(위치 앵커)를 갖지 않으므로,
   // Page 없이도 정상적으로 존재할 수 있다(빈 Section) — "먼저 Page를
   // 선택해야 한다"는 제약을 없앴다(Section Migration TODO 항목).
-  document.getElementById('add-section-btn').addEventListener('click', () => {
-    const title = prompt('Section 제목', '섹션')
+  document.getElementById('add-section-btn').addEventListener('click', async () => {
+    const title = await showTextPrompt({ title: 'Section 제목', defaultValue: '섹션' })
     if (title === null) return // 취소
 
     const finalTitle = title || '섹션'
@@ -1810,8 +1880,8 @@
     showToast(`"${preset.name}" 스타일을 적용했습니다. ${saveBtn.style.display === 'none' ? '"가사 추가"' : '"저장"'} 버튼을 눌러야 실제로 반영됩니다.`)
   })
 
-  presetSaveBtn.addEventListener('click', () => {
-    const name = prompt('프리셋 이름', '새 프리셋')
+  presetSaveBtn.addEventListener('click', async () => {
+    const name = await showTextPrompt({ title: '프리셋 이름', defaultValue: '새 프리셋' })
     if (name === null) return // 취소
     const preset = createStylePreset({
       name: name || '새 프리셋',

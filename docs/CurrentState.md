@@ -1413,6 +1413,62 @@ Library CRUD, Flow에 추가, 재가져오기) 전부 브라우저에서 직접 
 TODO.md의 나머지 열린 항목(Media Library UI, `prompt()` 취약점,
 Transition/Auto Advance 등) 중 선택.
 
+## 9-32. Section 추가/스타일 프리셋의 `prompt()` 취약점 근본 해결 (2026-07-11)
+
+### 배경
+
+9-31 이후 TODO 우선순위를 재검토하면서, 남은 항목 중 "지금 바로 해야
+하는 것"으로 `prompt()` 취약점을 지목했다 — 실사용 중 실제로 터진
+이력이 있는 유일한 미해결 결함이었고, 스타일 프리셋 "새로 저장"까지
+같은 `prompt()`를 재사용해 위험이 2곳으로 퍼져있는 상태였다(2026-07-06
+발견, 9-20/9-21에서 토스트 안내·자동 배정으로 부분 대응만 완료). 브라우저가
+`prompt()`/`alert()` 반복 호출을 감지해 "추가 대화상자 차단" 체크박스를
+띄우면, 그 이후 `prompt()` 호출이 항상 즉시 `null`을 반환해 버튼이
+안 먹는 것처럼 보이는 게 근본 원인이었다.
+
+### 수정
+
+`index.html`에 범용 "이름 입력" 모달(`#text-prompt-modal`)과
+`showTextPrompt({ title, defaultValue })` 헬퍼를 신설했다. 기존
+`.modal-overlay`/`.modal-box` 패턴을 그대로 재사용했고, `prompt()`와
+동일한 반환 계약(취소 시 `null`, 확인 시 입력 문자열)을 유지해 호출부
+수정을 최소화했다 — 확인/취소 버튼, 바깥 클릭, Enter(확인)/Escape(취소)
+키를 전부 지원한다.
+
+두 호출부를 교체했다:
+- "+ 섹션" 버튼: `prompt('Section 제목', '섹션')` → `await
+  showTextPrompt({ title: 'Section 제목', defaultValue: '섹션' })`
+- 스타일 프리셋 "새로 저장": `prompt('프리셋 이름', '새 프리셋')` →
+  동일 패턴으로 교체
+
+두 핸들러 모두 기존엔 동기 화살표 함수였는데, `await`를 쓰기 위해
+`async`로 전환했다. 이후 로직(`execute()` 체인, `createStylePreset()`
+호출 등)은 무수정 — `prompt()` 호출 자리만 `await showTextPrompt(...)`로
+바뀌었다. `grep`으로 확인한 결과 실제 코드에는 `prompt(`/`alert(` 호출이
+더 이상 하나도 없다(주석에 설명으로만 남아있음).
+
+### 회귀 테스트 추가
+
+`index.test.js`에 4개 추가 — 코드(주석 제외)에 `prompt(` 호출이 없는지,
+`showTextPrompt()`가 정의돼 있는지, Section 추가/프리셋 저장 두 핸들러가
+실제로 `showTextPrompt()`를 호출하는지. 주석에 "prompt()"라는 문자열
+자체가 설명 목적으로 자주 등장해서(예: "TODO.md의 prompt() 취약점 참조"),
+단순 텍스트 검색은 오탐이 나 주석을 먼저 벗겨내는 `stripComments()`
+헬퍼를 추가해 실제 코드만 검사하도록 했다.
+
+`npm test` 37개 전부 통과.
+
+### 변경 파일
+
+`index.html`, `index.test.js`, `docs/TODO.md`(항목 완료 처리),
+`docs/ManualTestChecklist.md`(브라우저 확인 항목 추가)
+
+### 브라우저 실사용 테스트 필요
+
+`ManualTestChecklist.md`에 등록: "+ 섹션"/프리셋 저장 모달 흐름(제목
+입력→확인, 취소, Enter/Escape, 바깥 클릭)이 실제로 기존과 동일하게
+동작하는지 — 아직 미확인.
+
 ## 문서 정리 (부수 작업)
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.

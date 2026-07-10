@@ -27,14 +27,17 @@ function extractModuleScript(source) {
   return match[1]
 }
 
-// '<elementId>' 버튼의 addEventListener('click', () => { ... }) 콜백
-// 본문만 중괄호 짝을 맞춰 추출한다.
+// '<elementId>' 버튼의 addEventListener('click', () => { ... }) 또는
+// addEventListener('click', async () => { ... }) 콜백 본문만 중괄호
+// 짝을 맞춰 추출한다.
 function extractClickHandlerBody(script, elementId) {
-  const marker = `document.getElementById('${elementId}').addEventListener('click', () => {`
-  const start = script.indexOf(marker)
-  if (start === -1) throw new Error(`'${elementId}' 클릭 핸들러를 찾을 수 없음`)
+  const marker = new RegExp(
+    `document\\.getElementById\\('${elementId}'\\)\\.addEventListener\\('click',\\s*(?:async\\s*)?\\(\\)\\s*=>\\s*\\{`,
+  )
+  const match = marker.exec(script)
+  if (!match) throw new Error(`'${elementId}' 클릭 핸들러를 찾을 수 없음`)
 
-  const bodyStart = start + marker.length
+  const bodyStart = match.index + match[0].length
   let depth = 1
   let i = bodyStart
   while (depth > 0 && i < script.length) {
@@ -43,6 +46,16 @@ function extractClickHandlerBody(script, elementId) {
     i++
   }
   return script.slice(bodyStart, i - 1)
+}
+
+// 주석(// 한 줄, /* 여러 줄) 안의 문자열은 제외하고 실제 코드에서만
+// 특정 패턴을 찾기 위한 헬퍼 — 이 프로젝트 다른 파일들의 주석이 설명
+// 목적으로 "prompt()"라는 문자열 자체를 자주 언급하기 때문에, 순수
+// 텍스트 검색만으로는 오탐이 난다.
+function stripComments(code) {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
 describe('Library 모달 — pendingDeleteSongId 초기화 회귀 가드', () => {
@@ -61,5 +74,35 @@ describe('Library 모달 — pendingDeleteSongId 초기화 회귀 가드', () =>
     assert.notEqual(resetIndex, -1)
     assert.notEqual(showIndex, -1)
     assert.ok(resetIndex < showIndex, '리셋은 모달을 보여주기 전에 실행돼야 한다')
+  })
+})
+
+describe('prompt() 취약점 근본 해결 회귀 가드 (2026-07-11)', () => {
+  const script = extractModuleScript(html)
+  const codeOnly = stripComments(script)
+
+  test('실제 코드에는 prompt() 호출이 더 이상 없다', () => {
+    // 이 assert가 깨지면 Section 추가나 스타일 프리셋 저장이 다시
+    // 브라우저 네이티브 prompt()로 되돌아간 것이다 — 반복 호출 차단
+    // 체크박스에 걸리면 버튼이 안 먹는 것처럼 보이는 그 버그.
+    assert.doesNotMatch(codeOnly, /\bprompt\s*\(/)
+  })
+
+  test('showTextPrompt() 헬퍼가 정의돼 있다', () => {
+    assert.match(codeOnly, /function showTextPrompt\(/)
+  })
+
+  test('add-section-btn 핸들러가 showTextPrompt()를 사용한다', () => {
+    const body = extractClickHandlerBody(script, 'add-section-btn')
+    assert.match(body, /await showTextPrompt\(/)
+  })
+
+  test('preset-save-btn 핸들러가 showTextPrompt()를 사용한다', () => {
+    // presetSaveBtn은 getElementById가 아니라 변수로 참조되므로, 이
+    // 핸들러가 프리셋 이름을 받을 때 showTextPrompt를 거치는지는
+    // 전체 스크립트 안에서 "프리셋 이름" 호출 지점 근처를 직접 확인한다.
+    const idx = codeOnly.indexOf("title: '프리셋 이름'")
+    assert.notEqual(idx, -1, "'프리셋 이름' 호출부를 찾을 수 없음")
+    assert.match(codeOnly.slice(Math.max(0, idx - 80), idx), /showTextPrompt/)
   })
 })
