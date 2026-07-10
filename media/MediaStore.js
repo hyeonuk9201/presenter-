@@ -165,3 +165,38 @@ export async function listIds() {
   const keys = await withStore('readonly', (store) => store.getAllKeys())
   return /** @type {string[]} */ (keys)
 }
+
+/**
+ * 저장된 모든 Media의 메타데이터를 조회한다(Media Library UI, 2026-07-11).
+ * blob은 포함하지 않는다 — 목록 화면은 파일명/타입/용량만 필요하고,
+ * 모든 레코드의 Blob을 한 번에 메모리에 올리는 건 낭비이기 때문이다
+ * (개별 Blob이 필요한 시점엔 get(mediaId)로 단건 조회한다).
+ * @returns {Promise<Array<{id: string, fileName: string, mimeType: string, size: number, createdAt: number}>>}
+ */
+export async function list() {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly')
+    const store = tx.objectStore(STORE_NAME)
+    const results = []
+
+    const request = store.openCursor()
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) {
+        resolve(results)
+        return
+      }
+      const record = cursor.value
+      results.push({
+        id: /** @type {string} */ (cursor.key),
+        fileName: record.fileName,
+        mimeType: record.mimeType,
+        size: record.size,
+        createdAt: record.createdAt,
+      })
+      cursor.continue()
+    }
+    request.onerror = () => reject(request.error)
+  })
+}

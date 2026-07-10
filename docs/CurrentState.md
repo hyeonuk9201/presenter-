@@ -1473,6 +1473,111 @@ Transition/Auto Advance 등) 중 선택.
 
 `docs/presenter/` 폴더 전체 삭제. 압축 파일에 예전 Obsidian 볼트가 그대로 섞여 들어와 있었다 — 20개 md 파일은 `docs/` 루트와 줄바꿈 문자(CRLF/LF)만 다르고 내용은 100% 동일한 중복이었고, `CurrentState.md` 1개만 내용이 달랐는데 2026-06-14 시점의 stale 버전(Freeze 이전)이라 폐기했다. `docs/`에는 이제 21개 문서만 남는다.
 
+## 9-33. Media Library UI (2026-07-11, TODO.md 로드맵의 P1 항목 구현)
+
+### 배경
+
+9-32 이후 `TODO.md`를 우선순위 로드맵 형태로 개편하면서(Priority/Status/
+Reason/Impact/Dependency/Risk/Completion Criteria 필드 도입), 미완료 P0/P1
+항목 중 Decision과 충돌하지 않는 유일한 항목으로 "Media Library UI"를
+선정했다. Library 모달의 Songs 탭은 9-29에서 완성됐지만 Backgrounds/Videos
+탭은 9-18 이후 "준비 중" 빈 메뉴로 남아있었다.
+
+착수 전 `Research/2026-07-05 Library-Centric Workflow.md`를 다시 확인했다
+— 이 문서는 "Media를 Page에 붙이기 전에 Library에 먼저 등록하고 재사용하는"
+전체 재구조화가 `D-002`(Presentation이 Page를 직접 소유)와 정면 충돌하고,
+GC/Persistence 스키마 분리까지 얽힌 더 큰 결정이라 아직 Research 단계로
+남겨뒀다고 명시한다. 다만 이 세션에서 구현한 범위는 그보다 훨씬 좁다 —
+**여러 Presentation이 Asset을 공유**하거나 **Page/Presentation 소유 구조를
+바꾸는 것이 아니라**, 이미 기술적으로는 막혀있지 않았던("mediaId를 공유하는
+것 자체는 막혀있지 않지만 그걸 가능하게 하는 화면이 없다" — 위 Research
+문서 인용) mediaId 재사용을 위한 **화면 하나**를 추가하는 것뿐이다. 새로
+만드는 Page도 기존 `ADD_PAGE`로 `pages[]` 맨 뒤에 들어가 `D-002` 구조를
+그대로 따른다 — 이 경계를 넘지 않는 선에서 착수했다.
+
+### 구현
+
+**`media/MediaStore.js`**: `list()` 신규 export. 저장된 모든 Media의
+메타데이터(`id`/`fileName`/`mimeType`/`size`/`createdAt`)를 Blob 없이
+반환한다 — 목록 화면에 Blob까지 전부 메모리에 올릴 필요가 없어서다(개별
+Blob은 필요할 때 기존 `get(mediaId)`로 단건 조회). 기존 `listIds()`는
+그대로 유지(디버그용, 호출부 없음).
+
+**`index.html`**: Library 모달의 Backgrounds/Videos 탭에 실제 목록/추가/
+삭제/적용 UI를 연결했다. Song Library(9-29)와 동일한 패턴을 재사용한다.
+
+- **추가**: "+ 배경 추가"/"+ 영상 추가" 버튼 → 숨겨진 file input → 선택한
+  파일마다 `putMedia()`로 `MediaStore`에만 저장한다. **Page는 만들지
+  않는다** — 기존 에디터 툴바의 "미디어 추가" 버튼(`media-file-input`,
+  Step6)은 업로드 즉시 Page를 만드는 별개 경로로 그대로 남겨뒀고, Library
+  쪽은 "등록"과 "배치"를 분리해 재사용을 가능하게 하는 것이 이번 작업의
+  핵심이다.
+- **목록**: `listMedia()` 결과를 `mimeType` 접두사(`image/`/`video/`)로
+  필터링해 각 탭에 렌더링한다. Song 목록과 동일한 CSS 클래스
+  (`section-list-row`/`section-list-info`/`section-list-actions` 등)를
+  재사용해 새 스타일을 추가하지 않았다.
+- **적용("Flow에 추가")**: 기존 `mediaId`를 그대로 참조하는 새
+  `createImagePage()`/`createVideoPage()` Page를 만들어 `ADD_PAGE`로
+  `pages[]` 맨 뒤에 추가한다. 같은 항목을 여러 번 눌러도 매번 새 Page가
+  생성되며 `mediaId`는 공유된다 — 브라우저 테스트로 재사용 자체를
+  확인했다(아래 참조).
+- **삭제**: Song 삭제와 동일한 2단계 확인(버튼 두 번 클릭, `confirm()`
+  미사용 — `prompt()` 취약점과 같은 부류의 "반복 대화상자 차단" 문제를
+  피하기 위함, 9-32 참조)으로 `removeMedia()`를 호출한다. 이미 어떤
+  Page가 참조 중인 `mediaId`를 삭제해도 막지 않는다 —
+  `CommandBus.preloadMedia()`가 원래 "레코드를 못 찾으면 조용히 경고만
+  남기고 넘어간다"로 이 상황을 이미 전제하고 설계돼 있어(기존 GC 미도입
+  결정과 같은 결), 별도 사용처 검사를 추가하지 않았다.
+
+### 회귀 테스트 추가
+
+`media/MediaStore.test.js` 신규(5개) — `fake-indexeddb/auto`로
+`globalThis.indexedDB`를 채워 `put`/`get`/`remove`/`list` 전부를 검증한다.
+같은 DB를 여러 테스트가 공유하므로(모듈 스코프 `DB_NAME` 상수라
+`SongStore.test.js`처럼 매번 새 인스턴스를 만들 수 없음), 각 테스트가 만든
+`mediaId`는 그 테스트 안에서 직접 정리한다.
+
+`npm test` 42개 전부 통과(기존 37 + MediaStore 5).
+
+### 브라우저 테스트 (Playwright, 자동화)
+
+`node:test`가 커버하지 않는 `index.html` embedded script/렌더링 영역은
+9-32에서 도입한 Playwright(로컬 정적 서버 + Chromium)로 확인했다(임시
+스크립트는 검증 후 삭제 — D-028 관행).
+
+- 라이브러리 모달 오픈, Backgrounds/Videos 빈 상태 안내 문구 확인
+- 배경 이미지 업로드 → 목록에 파일명/용량 표시, Videos 탭에는 안 나타남(카테고리 분리)
+- "Flow에 추가" → 성공 토스트 + CueList에 실제 Page 반영
+- 같은 항목을 두 번 "Flow에 추가" → 두 개의 Page가 모두 생성됨(재사용 확인)
+- 삭제 2단계 확인 → 실제 삭제 → 모달 재오픈 후에도 확인 상태가 새지 않음(9-31에서 고친 Song 삭제 버그와 같은 회귀 패턴을 미리 검증)
+- 영상 업로드 → Videos 탭 표시, Backgrounds 탭에는 안 나타남, "Flow에 추가" 동작 확인
+- 콘솔 에러 0건
+
+전체 18개 체크 전부 통과.
+
+### 변경 파일
+
+`media/MediaStore.js`(`list()` 추가), `media/MediaStore.test.js`(신규),
+`index.html`(Library 모달 Backgrounds/Videos 실기능 연결), `docs/TODO.md`
+(항목 완료 처리), `docs/ManualTestChecklist.md`(브라우저 확인 완료 반영).
+
+### 다음 단계 진입 시 주의사항
+
+1. **삭제는 사용처를 검사하지 않는다.** 이미 Page가 참조 중인 미디어를
+   삭제하면 그 Page는 다음 로드 시 "미디어를 찾을 수 없음"류 경고만
+   콘솔에 남고 조용히 깨진 채로 남는다(기존 `preloadMedia()` 설계 그대로,
+   신규 위험 아님). 실사용 중 문제로 확인되면 그때 사용처 경고를 추가한다.
+2. **Library 쪽 업로드와 에디터 툴바 업로드는 서로 다른 경로다.** 툴바
+   "미디어 추가"는 업로드 즉시 Page를 만들고, Library "+ 배경/영상 추가"는
+   Page를 만들지 않는다 — 이 비대칭은 의도된 것이다(재사용을 위해
+   "등록"과 "배치"를 분리). 두 경로를 하나로 합칠지는 실사용 피드백을
+   보고 별도로 판단한다.
+3. **`D-002`(Presentation이 Page를 직접 소유) 재검토 트리거는 아직
+   당겨지지 않았다.** 이번 작업은 그 경계 안에서 mediaId 재사용 화면만
+   추가한 것이며, 여러 Presentation 간 Asset 공유나 Persistence 스키마
+   분리 같은 `Research/2026-07-05 Library-Centric Workflow.md`의 더 큰
+   질문들은 여전히 Research 단계로 열려있다.
+
 ## 다음 단계 진입 시 주의사항
 
 1. **`Page.js`에 `mediaId`를 추가할 때 `isValidPage()`도 같이 갱신해야 한다.** 현재 `isValidPage()`는 `['text']`만 허용한다(주석으로 `// 미래: 'image', 'video' 추가`가 이미 박혀 있음). 다만 `Presentation.js`의 `addPage()`/`insertPageAt()`은 `isValidPage()`를 호출하지 않는 구조라(검증 없이 그대로 추가), 이 부분이 막혀 있어서 이번 세션 진행이 막혔던 건 아니다 — 다음 단계에서 `isValidPage()`를 검증 게이트로 실제로 쓰는 곳이 생기면 그때 동기화 필요.

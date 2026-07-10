@@ -9,7 +9,9 @@
 > 다시 설명하지 않는다. 완료된 항목은 체크만 하고 CurrentState.md의
 > 해당 세션 번호(예: 9-11)로 자세한 내용을 넘긴다.
 >
-> 최종 업데이트: 2026-07-11 (로드맵 구조 개편 — Priority/Status/Reason/
+> 최종 업데이트: 2026-07-11 (Media Library UI 완료, 9-33 — 로드맵 P0/P1
+> 중 유일한 미완료 항목이었던 것을 착수 전 Decision 충돌 여부까지 재확인
+> 후 구현. 로드맵 구조 자체는 같은 날 앞서 개편: Priority/Status/Reason/
 > Impact/Dependency/Risk/Completion Criteria 필드 도입, 기존 항목 유지)
 
 ---
@@ -41,11 +43,11 @@
 
 ### 지금 해야 하는 것 (P0/P1)
 
-- **P1 — Media Library UI**: `MediaStore.js`는 이미 있고 UI만 얹으면
-  되는 저리스크 고가치 작업. Song Library(9-29)로 이미 검증된 패턴을
-  그대로 재사용 가능. 상세는 [Feature TODO](#feature-todo) 참조.
-- 현재 P0(긴급) 항목 없음 — 가장 최근의 P0급 이슈였던 `prompt()`
-  취약점은 9-32에서 근본 해결됨.
+- 현재 P0/P1(미완료) 항목 없음. 가장 최근 P1이었던 Media Library UI는
+  9-33에서 완료(착수 전 `Research/2026-07-05 Library-Centric Workflow.md`
+  재확인, `D-002` 경계 안에서 구현). 가장 최근 P0급 이슈였던 `prompt()`
+  취약점은 9-32에서 근본 해결됨. 다음 착수 후보는 아래 "다음 후보(P2)"
+  참조.
 
 ### 다음 후보 (P2)
 
@@ -226,13 +228,8 @@
   - Risk: 높음 — 두 개의 독립된 히스토리 체계(Presentation Undo vs Library 비Undo)를 어떻게 공존시킬지에 대한 설계 결정이 없으면 착수 불가.
   - Completion Criteria: 새 Decision으로 Song Undo 범위(어떤 조작까지 되돌릴 수 있는지)를 확정한 뒤, 그 범위만큼 구현 + 회귀 테스트 통과.
 
-- [ ] **Media Library UI**
-  - Priority: P1 · Status: 예정
-  - Reason: Library 모달의 Songs 탭은 완성됐지만(9-29) Backgrounds/Videos 탭은 여전히 9-18의 빈 메뉴 상태로 남아있음. `MediaStore.js`는 이미 존재.
-  - Impact: `store/MediaStore.js`(이미 있음, 신규 로직 최소), Library 모달 UI, `index.html`. Song Library UI(9-29) 패턴 재사용 가능.
-  - Dependency: 없음 — `MediaStore.js`가 이미 완성돼 있고 `D-027`로 Song과 이미 분리돼 있어 즉시 착수 가능.
-  - Risk: 낮음 — 이미 검증된 Song Library UI 패턴을 재사용하는 국소 작업.
-  - Completion Criteria: Backgrounds/Videos 탭에서 목록/추가/삭제가 실제로 동작하고 Page에 적용 가능.
+- [x] **Media Library UI** — 9-33에서 완료
+  - Priority(당시): P1 · Status: 완료 · Reason: Library 모달의 Songs 탭은 완성됐지만(9-29) Backgrounds/Videos 탭은 9-18 이후 빈 메뉴로 남아있었음 · Impact: `media/MediaStore.js`(`list()` 신규), `index.html`(Library 모달) · Dependency: 없음(`MediaStore.js` 이미 존재, `D-027`로 Song과 이미 분리) · Risk: 낮음(이미 검증됨, 착수 전 `Research/2026-07-05 Library-Centric Workflow.md`와 `D-002` 재확인 — 여러 Presentation 간 Asset 공유가 아닌 "Page 생성 시 기존 mediaId를 재사용하는 화면"으로 범위를 좁혀 `D-002` 경계 안에서 구현) · Completion Criteria: Backgrounds/Videos 탭에서 목록/추가/삭제 동작 + "Flow에 추가"로 기존 mediaId를 재사용하는 새 Page 생성 확인(충족, 9-33). `media/MediaStore.test.js` 5건 + Playwright 브라우저 E2E 18건으로 검증.
 
 - [x] **Section 추가 버튼의 `prompt()` 취약점** — 9-32에서 근본 해결
   - Priority(당시): P0 · Status: 완료 · Reason: **(2026-07-06 실사용 중 발견)** 브라우저가 `prompt()`/`alert()` 반복 호출을 감지하면 "추가 대화상자 차단" 체크박스를 띄우는데, 실수로 체크하면 이후 프롬프트가 즉시 `null`을 반환해 버튼이 안 먹는 것처럼 보이는 실사용 버그(보안 취약점이라기보다 UX 장애에 가까웠으나 근본 원인은 네이티브 API 의존) · Impact: `index.html`(Section 추가/스타일 프리셋 저장 두 호출부) · Dependency: 없음 · Risk: 낮음(부분 대응 3회 거친 뒤 근본 해결, node:test 회귀 가드 4건 + Playwright 브라우저 E2E 17건으로 검증됨) · Completion Criteria: 부분 대응(9-20, 9-21, 토스트 안내/자동 배정)에 이어, 9-32에서 `showTextPrompt()`(인앱 모달)로 교체해 `prompt()` 자체를 제거(충족) — 네이티브 dialog 미발생을 자동화 테스트로 확인.
