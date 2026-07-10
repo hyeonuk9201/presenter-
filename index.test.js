@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const html = readFileSync(join(__dirname, 'index.html'), 'utf8')
+const cueListSource = readFileSync(join(__dirname, 'ui', 'CueList.js'), 'utf8')
 
 function extractModuleScript(source) {
   const match = source.match(/<script type="module">([\s\S]*?)<\/script>/)
@@ -104,5 +105,32 @@ describe('prompt() 취약점 근본 해결 회귀 가드 (2026-07-11)', () => {
     const idx = codeOnly.indexOf("title: '프리셋 이름'")
     assert.notEqual(idx, -1, "'프리셋 이름' 호출부를 찾을 수 없음")
     assert.match(codeOnly.slice(Math.max(0, idx - 80), idx), /showTextPrompt/)
+  })
+})
+
+describe('confirm() 잔존 제거 회귀 가드 (2026-07-11)', () => {
+  // 9-32는 prompt()만 고쳤고, CueList Page 삭제/"초기화" 버튼의 confirm()
+  // 두 곳은 같은 위험군(반복 대화상자 차단 시 버튼이 안 먹는 것처럼 보임)
+  // 인데도 남아있었다 — 이번에 함께 제거했다. 전역 grep으로 이 두 곳이
+  // 유일한 실사용처였음을 확인한 뒤 진행함(주석/문자열 언급은 이 테스트
+  // 대상이 아니다, stripComments로 걸러낸다).
+  const script = extractModuleScript(html)
+  const codeOnly = stripComments(script)
+  const cueListCodeOnly = stripComments(cueListSource)
+
+  test('index.html 코드에는 confirm() 호출이 더 이상 없다', () => {
+    assert.doesNotMatch(codeOnly, /\bconfirm\s*\(/)
+  })
+
+  test('ui/CueList.js 코드에는 confirm() 호출이 더 이상 없다', () => {
+    assert.doesNotMatch(cueListCodeOnly, /\bconfirm\s*\(/)
+  })
+
+  test('"초기화" 버튼이 2단계 확인 패턴(clearBtnPending)을 쓴다', () => {
+    assert.match(codeOnly, /clearBtnPending/)
+  })
+
+  test('CueList 삭제 버튼이 2단계 확인 패턴(pendingDeletePageId)을 쓴다', () => {
+    assert.match(cueListCodeOnly, /pendingDeletePageId/)
   })
 })

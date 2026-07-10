@@ -324,6 +324,13 @@
       background: var(--bg-raised);
       color: var(--text-primary);
     }
+    /* "초기화" 2단계 확인(2026-07-11, confirm() 제거) — 위 .style-preset-actions
+       .btn.is-confirming / .section-list-delete-btn.is-confirming와 동일한 시각 언어 */
+    #clear-btn.is-confirming {
+      background: var(--accent-danger);
+      border-color: var(--accent-danger);
+      color: #fff;
+    }
 
     #editor-body {
       display: grid;
@@ -2185,8 +2192,34 @@
   })
 
   // ── Editor: 초기화 ───────────────────────
-  document.getElementById('clear-btn').addEventListener('click', () => {
-    if (!confirm('모든 Page를 삭제할까요?')) return
+  // 2단계 인라인 확인(2026-07-11, confirm() 제거) — 9-32에서 prompt()만
+  // 고치고 이 confirm()은 함께 안 고쳐져 있었다(같은 위험군: 브라우저가
+  // 반복 대화상자를 차단하면 버튼이 안 먹는 것처럼 보임). 모달 안이 아니라
+  // 상시 노출된 툴바 버튼이라 "다시 열 때 리셋"할 기회가 없으므로, 대신
+  // 일정 시간 뒤 자동으로 확인 대기 상태를 취소한다.
+  const clearBtn = document.getElementById('clear-btn')
+  const clearBtnDefaultText = clearBtn.textContent
+  let clearBtnPending = false
+  let clearBtnResetTimer = null
+
+  function resetClearBtnConfirm() {
+    clearBtnPending = false
+    clearBtn.textContent = clearBtnDefaultText
+    clearBtn.classList.remove('is-confirming')
+    clearTimeout(clearBtnResetTimer)
+    clearBtnResetTimer = null
+  }
+
+  clearBtn.addEventListener('click', () => {
+    if (!clearBtnPending) {
+      clearBtnPending = true
+      clearBtn.textContent = '정말 초기화?'
+      clearBtn.classList.add('is-confirming')
+      clearBtnResetTimer = setTimeout(resetClearBtnConfirm, 3000)
+      return
+    }
+
+    resetClearBtnConfirm()
     getState().presentation.pages
       .map(p => p.id)
       .forEach(id => execute({ type: 'REMOVE_PAGE', payload: { pageId: id } }))

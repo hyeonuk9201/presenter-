@@ -24,6 +24,24 @@ export function createCueList(containerEl) {
   // 이 변수를 본다.
   let draggedPageId = null
 
+  // Page 삭제 2단계 확인(2026-07-11, confirm() 제거 — index.html의 Song/
+  // Section/Media 삭제와 동일한 패턴). 브라우저 네이티브 confirm()은
+  // 반복 호출 시 "이 페이지가 추가 대화상자를 만들지 못하게 차단" 체크로
+  // 막힐 수 있다(prompt() 취약점, 9-32와 동일한 위험군 — CueList의
+  // confirm()은 그때 함께 안 고쳐지고 남아있었다). pendingDeletePageId는
+  // 상태가 아니라 UI 전용 값이라 Store에 두지 않는다.
+  let pendingDeletePageId = null
+  let pendingDeleteBtnEl = null
+
+  function resetPendingDelete() {
+    if (pendingDeleteBtnEl) {
+      pendingDeleteBtnEl.textContent = '×'
+      pendingDeleteBtnEl.classList.remove('is-confirming')
+    }
+    pendingDeletePageId = null
+    pendingDeleteBtnEl = null
+  }
+
   render(getState())
   subscribe(({ state }) => render(state))
 
@@ -52,6 +70,7 @@ export function createCueList(containerEl) {
 
     if (pagesChanged) {
       lastFingerprint = currentFingerprint
+      resetPendingDelete() // DOM을 통째로 다시 그리면 이전 pendingDeleteBtnEl 참조가 끊어진다
       containerEl.innerHTML = ''
 
       if (pages.length === 0) {
@@ -246,10 +265,12 @@ export function createCueList(containerEl) {
     type.className = 'cue-type'
     type.textContent = page.type
 
+    const isPendingDelete = pendingDeletePageId === page.id
     const del = document.createElement('button')
-    del.className = 'cue-delete-btn'
-    del.textContent = '×'
+    del.className = 'cue-delete-btn' + (isPendingDelete ? ' is-confirming' : '')
+    del.textContent = isPendingDelete ? '정말 삭제?' : '×'
     del.title = '삭제'
+    if (isPendingDelete) pendingDeleteBtnEl = del // 전체 재렌더링(드래그 등) 이후에도 참조를 최신 DOM으로 갱신
 
     item.appendChild(num)
     item.appendChild(badge)
@@ -315,13 +336,19 @@ export function createCueList(containerEl) {
 
     del.addEventListener('click', (e) => {
       e.stopPropagation() // 아이템 클릭(SELECT) 전파 차단
-      // Step6(2026-06-27): getPreviewText()로 통일 — image/video Page는
-      // page.text가 항상 undefined라 기존 코드(`page.text?.split(...)`)로는
-      // 무조건 "(빈 페이지)"로 표시되는 문제가 있었다. getPreviewText는
-      // 이미 type별 분기를 갖고 있어(line 131~136) image Page는 "(image)"로
-      // 보여준다.
-      const firstLine = getPreviewText(page)
-      if (!confirm('이 Page를 삭제할까요?\n\n"' + firstLine + '"')) return
+
+      if (pendingDeletePageId !== page.id) {
+        // 1단계: 확인 대기로 전환. 다른 항목이 확인 대기 중이었다면 먼저 취소.
+        resetPendingDelete()
+        pendingDeletePageId = page.id
+        pendingDeleteBtnEl = del
+        del.textContent = '정말 삭제?'
+        del.classList.add('is-confirming')
+        return
+      }
+
+      // 2단계: 같은 버튼을 다시 눌렀다 — 실제 삭제 진행.
+      resetPendingDelete()
 
       const { presenterState } = getState()
       const wasSelected = presenterState.selectedPageId === page.id
@@ -343,6 +370,11 @@ export function createCueList(containerEl) {
     // Edit Mode: SELECT만
     // Live Mode: SELECT + GO_LIVE
     item.addEventListener('click', () => {
+      // 다른 항목의 삭제 확인이 대기 중이었다면 취소한다 — Song 삭제
+      // 2단계 확인 상태가 무관한 조작 이후에도 남아있던 회귀(9-31,
+      // pendingDeleteSongId 리셋 누락)와 같은 종류의 문제를 예방한다.
+      if (pendingDeletePageId && pendingDeletePageId !== page.id) resetPendingDelete()
+
       execute({ type: 'SELECT_PAGE', payload: { pageId: page.id } })
 
       // (TODO-001, Phase B) DOM class(#app.mode-live) 읽기 대신 state의
