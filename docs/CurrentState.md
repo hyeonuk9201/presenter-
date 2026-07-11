@@ -3,9 +3,10 @@
 본 문서는 현재 구현 상태를 기록한다.
 최종 목표 구조는 Architecture.md 및 Decisions.md를 따른다.
 
-최종 업데이트: 2026-07-11 (9-43 저장소 위생 — 최신 세션은 항상 문서
-맨 아래에 있다. "맨 아래 번호 큰 것부터" 읽는 규칙(CLAUDE.md)이 이
-문서의 실제 사용 방법이다. 다음 작업 목록은 TODO.md가 단일 출처.)
+최종 업데이트: 2026-07-11 (9-44 Research 탐구 → 승격 4건 + 문서 위생 —
+최신 세션은 항상 문서 맨 아래에 있다. "맨 아래 번호 큰 것부터" 읽는
+규칙(CLAUDE.md)이 이 문서의 실제 사용 방법이다. 다음 작업 목록은
+TODO.md가 단일 출처.)
 
 ---
 
@@ -2289,3 +2290,64 @@ workspace.json은 열 때마다 변경됨)이라 `.gitignore` 추가 + `git rm
    소화됐다(9-41/9-42/9-43).
 2. **Obsidian이 docs/.obsidian/을 다시 만들어도 이제 git에 잡히지
    않는다** — 의도된 동작이다.
+
+## 9-44. Research 탐구 → 승격 4건 + 문서 위생 (2026-07-11, 코드 무수정)
+
+### 세션 성격 및 복원 경위
+
+기술 부채 감사(9-39)와 Research 문서들에 쌓인 미승격 후보를 사용자와
+함께 재검토하고, 승인된 4건을 TODO.md의 7필드 항목으로 승격한 문서
+전용 세션. **원 세션이 TODO.md 상단 로드맵만 갱신한 시점에 비정상
+종료됐고**, 후속 세션이 로드맵의 참조("상세는 ~ 참조")와 헤더 기록을
+근거로 나머지(본문 상세 항목 4건, Research 문서 해소 표시, 이 절)를
+복원해 완결했다.
+
+### 승격 4건 (사용자 승인)
+
+1. **Live Emergency Overlay (MVP)** — P2, Feature TODO.
+   `Research/Observations.md` 2026-07-08의 요구사항 7개가 근거.
+   **착수 전 새 Decision(Overlay State 위치/경로, D-004와의 관계)
+   필수**로 명시.
+2. **UI 통지 경로 이행 — storeChanged → Mutation 타겟 통지** — P2,
+   Architecture TODO. 감사 TD-4의 승격이며 D-017의 코드 이행이라
+   결정과 정방향. Overlay 등 UI 확장 전 선행 가치.
+3. **저장 트리거 정리 — SET_SELECTION/SET_LIVE_PAGE 저장 제거** — P3,
+   Architecture TODO. 감사 TD-5의 승격. UI 통지 이행과 같은 시기 처리
+   권장.
+4. **"가사 추가" 경로의 Song 통합 검토** — P3, Feature TODO.
+   `importLyrics()` 일방향 문제(Observations 2026-07-05 Reflow 조사)의
+   근본 해소 후보. 실사용 불편 신호 대기.
+
+권장 착수 순서는 내보내기/가져오기(기존 P2 1순위 유지) → Emergency
+Overlay(Decision 선행) → UI 통지 이행으로 TODO.md에 기록했다.
+감사의 나머지(TD-2/TD-8)는 의도적으로 비승격 유지 — 근거는
+`Research/2026-07-11 Tech Debt Audit.md`에만 둔다.
+
+### 문서 위생 (Research 낡은 절 해소 표시)
+
+- `Research/2026-07-11 Tech Debt Audit.md` — 요약 표에 TD-4/TD-5
+  (9-44 승격)·TD-6/TD-7(9-43 해소) 후속 처리 표시, "권장 착수 순서"
+  절을 취소선 + 판단 완료 표시(9-38의 CurrentState 낡은 절 해소와
+  같은 방식 — 원문은 근거 기록으로 보존).
+- `Research/Observations.md` — 2026-07-08 Emergency Overlay 절과
+  2026-07-05 Reflow 조사 절에 승격/해소 인용 블록 추가("착수 판단은
+  TODO.md가 단일 출처" 명시). Reflow 절이 참조하던 "Asset/Song 관계
+  재검토"가 9-28(D-026/D-027)에서 이미 확정됐음을 함께 표시.
+
+### 변경 파일
+
+`docs/TODO.md`(헤더 + 로드맵 + 상세 항목 4건 추가),
+`docs/Research/2026-07-11 Tech Debt Audit.md`(후속 처리 표시),
+`docs/Research/Observations.md`(승격 표시 2곳),
+`docs/CurrentState.md`(헤더 + 이 절). **코드 무수정.**
+
+### 다음 단계 진입 시 주의사항
+
+1. **기능 대기열 1순위는 여전히 "데이터 내보내기/가져오기 + persist"**
+   (9-40 승격, P2)다 — 이번 승격 4건이 그보다 앞서지 않는다.
+2. **Emergency Overlay는 Decision 없이 착수 금지** — Overlay State를
+   어디에 둘지(PresenterState 인접/별도 Store), CommandBus 경유 여부,
+   D-004(PresenterState 저장 제외)와의 관계를 D-NNN으로 먼저 확정할 것.
+3. **UI 통지 이행(TD-4)에 착수하면 새 UI 코드가 legacy `subscribe()`를
+   더 늘리지 않도록** 주의 — Overlay UI를 먼저 만들면 legacy 구독이
+   1곳 더 생기는 역순 함정이 있다(권장 순서를 지킬 것).
