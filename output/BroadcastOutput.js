@@ -25,7 +25,7 @@
  *   Page 전환과 내용 변경 둘 다 하나의 조건으로 감지된다.
  */
 
-import { subscribe, getState } from '../store/AppStore.js'
+import { registerSubscriber, getState } from '../store/AppStore.js'
 
 const CHANNEL_NAME = 'tc-presenter-output'
 
@@ -60,7 +60,18 @@ export function createBroadcastOutput() {
     channel.postMessage({ type: 'SHOW_PAGE', page })
   }
 
-  subscribe(() => sendState())
+  // D-017 코드 이행(2026-07-11, 감사 TD-4): storeChanged 대신 Mutation
+  // 타겟 통지. 관심 목록의 근거 — SET_LIVE_PAGE는 송출 대상 전환/해제,
+  // SET_PAGES는 "같은 Page가 Live인 채로 내용만 바뀌는" 경우(위 헤더의
+  // dedupe 배경 참조 — Page 참조 비교가 이 경우를 감지한다). selection/
+  // appMode/title/sections는 송출과 무관 — 특히 Live 진행 중 매 선택
+  // 변경마다 sendState()가 불리던 것이 이 이행으로 사라진다(OutputArchitecture
+  // .md의 "SET_LIVE_PAGE Mutation을 구독한다" 서술과도 이제 일치).
+  registerSubscriber({
+    id: 'BroadcastOutput',
+    interestedMutations: ['SET_PAGES', 'SET_LIVE_PAGE'],
+    notify: () => sendState(),
+  })
 
   channel.onmessage = ({ data }) => {
     if (data.type === 'REQUEST_SYNC') {

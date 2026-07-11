@@ -16,7 +16,7 @@
  *   구독이라, 이 파일의 변경은 Output 창 동작에 전혀 영향을 주지 않는다.
  */
 
-import { subscribe, getState } from '../store/AppStore.js'
+import { registerSubscriber, getState } from '../store/AppStore.js'
 import { createPageView } from '../view/PageView.js'
 import { peek as peekMediaCache } from '../media/MediaRuntimeCache.js'
 
@@ -25,7 +25,19 @@ export function createPreviewPanel(containerEl) {
   render(getState())
 
   // ── Store 구독 ───────────────────────────
-  subscribe(({ state }) => render(state))
+  // D-017 코드 이행(2026-07-11, 감사 TD-4): storeChanged 대신 Mutation
+  // 타겟 통지. 관심 목록의 근거 — 렌더 대상 결정에 appMode(SET_APP_MODE)와
+  // selectedPageId/livePageId(SET_SELECTION/SET_LIVE_PAGE)가 쓰이고, 대상
+  // Page의 내용 변경(SET_PAGES — 편집 중 실시간 미리보기)도 다시 그려야
+  // 한다. SET_SECTIONS/SET_TITLE은 Page 렌더링과 무관. 매 통지마다 DOM을
+  // 통째로 교체하는 구조 자체는 그대로다(9-35가 Transition을 못 넣은
+  // 원인) — 이번 이행은 "불필요한 Mutation에 반응하지 않게" 하는 것까지고,
+  // 증분 렌더링은 별도 작업.
+  registerSubscriber({
+    id: 'PreviewPanel',
+    interestedMutations: ['SET_PAGES', 'SET_SELECTION', 'SET_LIVE_PAGE', 'SET_APP_MODE'],
+    notify: (_mutations, state) => render(state),
+  })
 
   // ── 렌더링 ───────────────────────────────
   function render(state) {

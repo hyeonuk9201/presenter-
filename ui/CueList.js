@@ -11,7 +11,7 @@
  * 아니라 state.presenterState.appMode 기반으로 동작한다.
  */
 
-import { subscribe, getState, getSectionGroups } from '../store/AppStore.js'
+import { registerSubscriber, getState, getSectionGroups } from '../store/AppStore.js'
 import { execute } from '../command/CommandBus.js'
 
 export function createCueList(containerEl) {
@@ -43,7 +43,16 @@ export function createCueList(containerEl) {
   }
 
   render(getState())
-  subscribe(({ state }) => render(state))
+  // D-017 코드 이행(2026-07-11, 감사 TD-4): storeChanged 브로드캐스트 대신
+  // Mutation 타겟 통지. 관심 목록의 근거 — SET_PAGES/SET_SECTIONS는
+  // fingerprint 재계산 대상(pages/sectionMap), SET_SELECTION/SET_LIVE_PAGE는
+  // is-selected/is-live 클래스 토글 대상. SET_APP_MODE는 렌더링에 안 쓰이고
+  // (appMode는 클릭 시점에 getState()로 읽는다), SET_TITLE도 무관.
+  registerSubscriber({
+    id: 'CueList',
+    interestedMutations: ['SET_PAGES', 'SET_SECTIONS', 'SET_SELECTION', 'SET_LIVE_PAGE'],
+    notify: (_mutations, state) => render(state),
+  })
 
   // ── 렌더링 ───────────────────────────────
   function render(state) {
@@ -364,7 +373,8 @@ export function createCueList(containerEl) {
       execute({ type: 'REMOVE_PAGE', payload: { pageId: page.id } })
 
       if (wasSelected) {
-        // selectedPageId → null → subscribe else 분기에서 Editor 초기화 처리
+        // selectedPageId → null → index.html의 Editor 구독(SET_SELECTION)
+        // else 분기에서 Editor 초기화 처리
       }
 
       if (wasLive) {

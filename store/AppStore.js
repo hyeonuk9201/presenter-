@@ -5,11 +5,14 @@
  *
  * 규칙:
  *   1. 상태는 dispatch()를 통해서만 변경한다.
- *   2. UI는 subscribe()로 변경을 감지한다.
+ *   2. UI는 registerSubscriber()(Mutation 타겟 통지)로 변경을 감지한다.
  *   3. 계산 데이터(Derived)는 Store에 저장하지 않는다.
  *
- * Step2 (Mutation 기반 Subscriber, 병행 추가):
- *   - 기존 storeChanged 단일 브로드캐스트는 그대로 유지한다. (기존 Subscriber 제거하지 않음)
+ * Step2 (Mutation 기반 Subscriber):
+ *   - (2026-07-11, D-017 코드 이행 — 감사 TD-4) 병행 유지하던 storeChanged
+ *     단일 브로드캐스트(subscribe())는 제거했다. 전 구독자(CueList/
+ *     PreviewPanel/BroadcastOutput/index.html 3곳)가 Mutation 타겟 통지로
+ *     이행 완료 — 새 UI는 반드시 registerSubscriber()를 쓴다.
  *   - registerSubscriber()로 등록한 Mutation Subscriber는 자신이 선언한
  *     interestedMutations에 해당하는 Mutation이 발생했을 때만 notify()를 받는다.
  *   - Mutation은 Action 자체가 아니라 "State의 어떤 부분이 바뀌었는가"를 나타내는
@@ -87,12 +90,6 @@ let state = {
 }
 
 // ─────────────────────────────────────────
-// Event Bus (기존 storeChanged 브로드캐스트 — 유지)
-// ─────────────────────────────────────────
-
-const bus = new EventTarget()
-
-// ─────────────────────────────────────────
 // Mutation Subscriber Registry (신규, 병행 추가)
 // ─────────────────────────────────────────
 
@@ -103,8 +100,7 @@ const bus = new EventTarget()
 const mutationSubscribers = []
 
 /**
- * Mutation Subscriber를 등록한다.
- * 기존 subscribe()(storeChanged)와는 별개의 통지 경로이다.
+ * Mutation Subscriber를 등록한다 — 유일한 변경 통지 경로다(D-017).
  *
  * @param {{ id: string, interestedMutations: string[], notify: (mutations: string[], state: object) => void }} subscriber
  */
@@ -184,9 +180,9 @@ export function getState() {
   return state
 }
 
-export function subscribe(listener) {
-  bus.addEventListener('storeChanged', (e) => listener(e.detail))
-}
+// subscribe()(storeChanged 브로드캐스트)는 D-017 코드 이행(2026-07-11,
+// 감사 TD-4)으로 제거됐다 — 변경 감지는 registerSubscriber()가 유일한
+// 경로다. 어떤 Mutation이 있는지는 deriveMutations() 참조.
 
 export function dispatch(action) {
   const prev = state
@@ -213,14 +209,8 @@ export function dispatch(action) {
   // PersistenceSubscriber가 SET_PAGES / SET_TITLE / SET_SELECTION / SET_LIVE_PAGE
   // Mutation을 구독하여 dispatch 이후 별도로 저장한다.
 
-  // (기존, 유지) storeChanged 단일 브로드캐스트
-  bus.dispatchEvent(
-    new CustomEvent('storeChanged', {
-      detail: { action, state },
-    })
-  )
-
-  // (신규, 병행) Mutation 기반 타겟 통지
+  // Mutation 기반 타겟 통지 — 유일한 통지 경로(D-017 코드 이행, 2026-07-11).
+  // 이전에 여기 있던 storeChanged 단일 브로드캐스트는 제거됐다.
   const mutations = deriveMutations(action.type, prev, state)
   notifyMutationSubscribers(mutations, state)
 }
