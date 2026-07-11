@@ -11,7 +11,7 @@
  *   - AppStore는 HistoryManager의 존재를 알지 않는다.
  *   - Undo/Redo는 HistoryManager → CommandBus → AppStore 경로로 역방향
  *     Command를 주입한다. 이때 다시 Hook이 호출되어도 History에 재기록되지
- *     않아야 한다 (재귀 기록 방지 — 아래 isApplyingHistory 참조).
+ *     않아야 한다 (재귀 기록 방지 — 아래 applyingDepth 참조).
  *
  * Hook 시그니처 (CommandBus와 합의된 최소 형태):
  *   historyHook.afterExecute(command, prevState)
@@ -58,6 +58,10 @@
  *     await commandBusExecute(entry.undoCommand)로 실제 replay(=dispatch
  *     + afterExecute 호출)가 완전히 끝난 뒤에야 isApplyingHistory를
  *     해제한다.
+ *   - (2026-07-11, TD-1 후속) 당시의 boolean 플래그(isApplyingHistory)는
+ *     이후 카운터(applyingDepth)로 교체됐다 — "두 undo가 겹치는" 경우
+ *     첫 undo의 해제가 두 번째 undo의 가드를 무너뜨리는 잔여 버그가
+ *     기술 부채 감사에서 재현됐기 때문(아래 applyingDepth 주석 참조).
  *   - 호출부(index.html의 Ctrl+Z 핸들러 등)는 undo(CommandBus.execute)를
  *     호출하고 끝내는 fire-and-forget 패턴이었다면 그대로 동작한다(반환된
  *     Promise를 안 받아도 무방) — 다만 호출 직후 동기적으로 canUndo()를
@@ -80,13 +84,24 @@ const HISTORY_LIMIT = 100
 
 /**
  * undo()/redo()가 CommandBus.execute()를 통해 역방향 Command를 실행할 때,
- * 그 실행이 다시 afterExecute Hook을 통해 History에 기록되지 않도록 막는 플래그.
- * 이 플래그가 없으면 undo → 기록 → undo → 기록 형태로 스택이 오염된다.
+ * 그 실행이 다시 afterExecute Hook을 통해 History에 기록되지 않도록 막는 가드.
+ * 이 가드가 없으면 undo → 기록 → undo → 기록 형태로 스택이 오염된다.
+ *
+ * boolean 플래그가 아니라 카운터인 이유 (TD-1 수정, 2026-07-11):
+ *   undo()가 완료되기 전에 undo()가 다시 호출되면(예: CommandBus 큐가
+ *   media preload로 지연 중일 때 빠른 연속 Ctrl+Z) 두 호출이 겹친다.
+ *   boolean이면 첫 undo의 finally가 가드를 통째로 해제해버려, 아직
+ *   큐에서 대기 중이던 두 번째 undo의 역방향 Command가 가드 없이
+ *   dispatch → afterExecute에 재기록되어 스택이 오염된다(기술 부채
+ *   감사 2026-07-11에서 실제 재현 — 기대 undo 0/redo 2가 1/1이 됨).
+ *   카운터로 바꾸면 겹친 undo/redo가 전부 끝나기 전까지 가드가
+ *   유지된다 — D-019가 고친 "한 undo 안에서의" 타이밍 버그와 같은
+ *   계열인 "두 undo 사이의" 타이밍 버그다.
  */
-let isApplyingHistory = false
+let applyingDepth = 0
 
 export function isHistoryApplying() {
-  return isApplyingHistory
+  return applyingDepth > 0
 }
 
 // ─────────────────────────────────────────
@@ -266,12 +281,13 @@ function computeInverse(action, prevState) {
 /**
  * action 실행 결과를 History Entry로 기록한다.
  * CommandBus의 afterExecute Hook에서 호출되도록 이름과 시그니처를 맞췄다.
- * isApplyingHistory가 true인 동안에는 기록하지 않는다 (재귀 기록 방지).
+ * applyingDepth가 0보다 큰 동안(undo/redo replay 진행 중)에는 기록하지
+ * 않는다 (재귀 기록 방지).
  *
  * @returns {boolean} 실제로 기록했는지 여부
  */
 export function afterExecute(action, prevState) {
-  if (isApplyingHistory) return false
+  if (applyingDepth > 0) return false
 
   const inverse = computeInverse(action, prevState)
   if (!inverse) return false
@@ -307,7 +323,8 @@ export function afterExecute(action, prevState) {
  *
  * async로 전환(Step6) — commandBusExecute가 반환하는 Promise가 실제
  * dispatch + afterExecute 호출까지 끝난 뒤에 resolve되므로, 그걸 await해야
- * isApplyingHistory를 안전한 시점에 해제할 수 있다 (파일 헤더 참조).
+ * 재귀 기록 방지 가드(applyingDepth)를 안전한 시점에 해제할 수 있다
+ * (파일 헤더 참조).
  *
  * @returns {Promise<boolean>}
  */
@@ -315,11 +332,11 @@ export async function undo(commandBusExecute) {
   const entry = undoStack.pop()
   if (!entry) return false
 
-  isApplyingHistory = true
+  applyingDepth++
   try {
     await commandBusExecute(entry.undoCommand)
   } finally {
-    isApplyingHistory = false
+    applyingDepth--
   }
 
   redoStack.push(entry)
@@ -333,11 +350,11 @@ export async function redo(commandBusExecute) {
   const entry = redoStack.pop()
   if (!entry) return false
 
-  isApplyingHistory = true
+  applyingDepth++
   try {
     await commandBusExecute(entry.redoCommand)
   } finally {
-    isApplyingHistory = false
+    applyingDepth--
   }
 
   undoStack.push(entry)

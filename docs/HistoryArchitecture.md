@@ -453,9 +453,17 @@ HistoryManager 수정 없이 확장 가능해야 한다.
 `CommandBus.execute()`가 async가 되면서(media preload, D-019)
 `undo()` / `redo()`도 **async 함수**다. `await commandBusExecute(...)`로
 역방향 Command의 실제 replay(dispatch + afterExecute 호출)가 완전히
-끝난 뒤에야 재귀 기록 방지 플래그(`isApplyingHistory`)를 해제한다 —
-sync였을 때는 플래그가 dispatch보다 먼저 풀려 재귀 기록 방지가
-무력화될 수 있는 잠재 결함이 있었다(fake-indexeddb로 재현 후 수정).
+끝난 뒤에야 재귀 기록 방지 가드를 해제한다 — sync였을 때는 가드가
+dispatch보다 먼저 풀려 재귀 기록 방지가 무력화될 수 있는 잠재 결함이
+있었다(fake-indexeddb로 재현 후 수정).
+
+가드는 boolean 플래그(`isApplyingHistory`)가 아니라 **카운터**
+(`applyingDepth`)다(2026-07-11, 기술 부채 감사 TD-1 수정) — undo가
+완료되기 전에 undo가 다시 호출되어 두 replay가 겹치면, boolean은 첫
+undo의 해제가 두 번째 undo의 가드까지 무너뜨려 역방향 Command가
+History에 재기록(스택 오염)됐다. 카운터는 겹친 replay가 전부 끝날
+때까지 가드를 유지한다. 회귀 가드:
+`history/HistoryManager.test.js`의 "연속 undo 2회" 테스트.
 
 ## History Entry 구조 (현재)
 

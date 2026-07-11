@@ -193,13 +193,13 @@ describe('HistoryManager — 스택 한도', () => {
   })
 })
 
-describe('HistoryManager — TD-1 (기술 부채 감사 2026-07-11에서 재현된 잠재 버그)', () => {
-  // 알려진 실패: undo() 완료 전 재호출 시 첫 undo의 finally가
-  // isApplyingHistory(단일 boolean)를 조기 해제 → 두 번째 undo의 역방향
-  // Command가 afterExecute에서 History에 재기록되어 스택이 오염된다.
-  // 수정(플래그 → 카운터 또는 undo/redo 직렬화) 후 이 테스트가 통과하면
-  // { todo: true }를 제거해 상시 회귀 가드로 승격할 것.
-  test('연속 undo 2회 — 첫 완료를 기다리지 않아도 스택이 오염되지 않아야 한다', { todo: true }, async () => {
+describe('HistoryManager — TD-1 (기술 부채 감사 2026-07-11에서 재현, 9-42에서 수정)', () => {
+  // 과거 버그: undo() 완료 전 재호출 시 첫 undo의 finally가 boolean
+  // 플래그(isApplyingHistory)를 조기 해제 → 두 번째 undo의 역방향
+  // Command가 afterExecute에서 History에 재기록되어 스택이 오염됐다.
+  // 카운터(applyingDepth)로 교체해 수정(9-42) — 이 테스트가 상시 회귀
+  // 가드다(9-41에서는 { todo: true } 알려진 실패였음).
+  test('연속 undo 2회 — 첫 완료를 기다리지 않아도 스택이 오염되지 않아야 한다', async () => {
     const before = getHistorySnapshot()
     assert.ok(before.undoCount >= 2, '전제: undo 가능한 entry가 2개 이상')
 

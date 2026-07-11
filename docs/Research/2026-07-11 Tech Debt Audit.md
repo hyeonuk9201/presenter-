@@ -23,14 +23,14 @@ Decisions.md/TODO.md/CurrentState.md에 "의도적 보류"로 기록돼 있고,
 
 | ID | 항목 | 분류 | 심각도 | 검증 수준 |
 | --- | --- | --- | --- | --- |
-| TD-1 | 연속 Undo 시 History 스택 오염 | 잠재 버그 | 높음(도달성은 낮음) | **재현됨** |
+| TD-1 | 연속 Undo 시 History 스택 오염 | 잠재 버그 | 높음(도달성은 낮음) | **재현됨** → **9-42 수정 완료** |
 | TD-2 | fire-and-forget 경로의 미처리 rejection | 잠재 버그 | 중간 | 추측(코드 분석만) |
-| TD-3 | command/history/persistence 계층 테스트 0건 | 테스트 부채 | 높음 | 확인됨 |
+| TD-3 | command/history/persistence 계층 테스트 0건 | 테스트 부채 | 높음 | 확인됨 → **9-41 해소** |
 | TD-4 | D-017 vs 이중 통지 병행 — 전 UI가 legacy 경로 사용 | 구조 부채 | 중간 | 확인됨 |
 | TD-5 | 선택/송출 변경마다 전체 저장 | 성능 부채 | 중간 | 확인됨 |
 | TD-6 | test.html — 금지 패턴 위반 레거시 파일 잔존 | 위생 | 낮음 | 확인됨 |
 | TD-7 | docs/.obsidian/ 이 git 추적됨 | 위생 | 낮음 | 확인됨 |
-| TD-8 | node_modules 미설치(이 체크아웃) | 환경 | 낮음 | 확인됨 |
+| TD-8 | node_modules 미설치(이 체크아웃) | 환경 | 낮음 | 확인됨 → **9-41 해소**(npm install) |
 | TD-9 | (기록만) 이미 문서화된 의도적 보류 목록 | — | — | 대조 완료 |
 
 ---
