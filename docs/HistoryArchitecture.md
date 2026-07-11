@@ -438,3 +438,38 @@ AppStore
 * DevTools Time Travel
 
 HistoryManager 수정 없이 확장 가능해야 한다.
+
+---
+
+# 현재 구현 노트 (D-018 / D-019 반영, 2026-07-11 문서 정리)
+
+위 본문은 목표 구조다. 현재 구현(`history/HistoryManager.js`)과의
+차이를 여기에 기록한다 — D-019가 "다음 문서 정리 세션에서 반영"으로
+예고했던 갱신이다. 세부 근거는 `Decisions.md`의 해당 항목과 소스 파일
+헤더 주석이 단일 출처다.
+
+## undo() / redo()의 async 전환 (D-019)
+
+`CommandBus.execute()`가 async가 되면서(media preload, D-019)
+`undo()` / `redo()`도 **async 함수**다. `await commandBusExecute(...)`로
+역방향 Command의 실제 replay(dispatch + afterExecute 호출)가 완전히
+끝난 뒤에야 재귀 기록 방지 플래그(`isApplyingHistory`)를 해제한다 —
+sync였을 때는 플래그가 dispatch보다 먼저 풀려 재귀 기록 방지가
+무력화될 수 있는 잠재 결함이 있었다(fake-indexeddb로 재현 후 수정).
+
+## History Entry 구조 (현재)
+
+본문의 `{ id, transactionId, label, undoPayload, redoPayload, timestamp }`
+대신, 현재는 `{ id, label, undoCommand, redoCommand, timestamp }`를
+저장한다. CommandRegistry가 아직 없어 순수 Payload를 저장해도 재실행 시
+Command로 되돌릴 변환기가 없기 때문에, "되돌릴 수 있는 완성된
+Command"(`CommandBus.execute()`에 그대로 전달 가능한 형태)를 저장한다.
+CommandRegistry 도입 시 본문 구조로 정리할 수 있다. `transactionId`
+(Composite Command 묶음)는 미구현 — Action 1개 = Entry 1개.
+
+## Recording Policy (현재)
+
+본문의 Ignore 목록에 더해, 현재 구현은 다음을 Ignore한다(Step5 실사용
+후 확정 + Phase B): `SELECT_PAGE` / `CLEAR_SELECTION` / `GO_LIVE` /
+`CLEAR_LIVE` / `SET_APP_MODE` — 일시적 포커스/모드 상태일 뿐 데이터
+변경이 없다. History Limit(100, FIFO)은 본문대로 구현되어 있다.

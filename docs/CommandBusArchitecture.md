@@ -389,3 +389,41 @@ Renderer
 * DevTools Time Travel
 
 새로운 Command 추가 시 CommandBus 수정 없이 확장 가능해야 한다.
+
+---
+
+# 현재 구현 노트 (D-018 / D-019 / D-020 반영, 2026-07-11 문서 정리)
+
+위 본문은 목표 구조다. 현재 구현(`command/CommandBus.js`)과의 차이를
+여기에 기록한다 — D-019/D-020이 "다음 문서 정리 세션에서 반영"으로
+예고했던 갱신이다. 세부 근거는 `Decisions.md`의 해당 항목과 소스 파일
+헤더 주석이 단일 출처다.
+
+## async 직렬 실행 큐 (D-019)
+
+`execute()`는 완전 동기가 아니라 **async 함수**다. media가 있는
+Command(ADD_PAGE / UPDATE_PAGE / INSERT_PAGE_AT — `MEDIA_COMMANDS`
+whitelist)는 dispatch 이전에 `preloadMedia()`로 IndexedDB(MediaStore)를
+조회해 MediaRuntimeCache(mediaId → blob URL)를 채운다.
+
+이로 인한 순서 역전(늦게 호출한 media 없는 Command가 먼저 dispatch되는
+문제)을 막기 위해 모든 `execute()` 호출은 **내부 단일 Promise 큐에 순차
+체이닝**된다 — 본문의 "Ordering Guarantee"(FIFO)는 이 큐가 실제로
+구현한다. 외부 호출 계약은 그대로다(fire-and-forget 허용, 반환 Promise를
+await해도 됨).
+
+## bootstrapMediaCache (D-020)
+
+localStorage에서 복원되는 Page(앱 부팅 경로)는 `execute()`를 거치지
+않으므로, 부팅 시 1회 `bootstrapMediaCache(pages)`를 호출해 캐시를
+일괄로 채운다. 이 함수는 **dispatch도 History 기록도 하지 않는다** —
+Mutation 경로가 아니라 캐시 부수효과만 수행하므로, 본문의 "Single Entry
+Point" 원칙(모든 Mutation은 CommandBus 경유)과 충돌하지 않는다. 캐시
+쓰기가 `preloadMedia()` 한 곳으로 모이는 원칙도 그대로 유지된다.
+
+## 아직 구현되지 않은 개념
+
+CommandExecutor / CommandRegistry / Composite Command / Transaction은
+현재 코드에 존재하지 않는다(목표 구조). Lifecycle Hook은 범용 Registry가
+아니라 **HistoryManager 전용 단일 슬롯**(`setHistoryHook`, `afterExecute`만)
+으로 구현되어 있다 — D-018 참조.
