@@ -3,9 +3,9 @@
 본 문서는 현재 구현 상태를 기록한다.
 최종 목표 구조는 Architecture.md 및 Decisions.md를 따른다.
 
-최종 업데이트: 2026-07-11 (9-42 연속 Undo 스택 오염 수정 — 최신 세션은
-항상 문서 맨 아래에 있다. "맨 아래 번호 큰 것부터" 읽는 규칙(CLAUDE.md)
-이 이 문서의 실제 사용 방법이다. 다음 작업 목록은 TODO.md가 단일 출처.)
+최종 업데이트: 2026-07-11 (9-43 저장소 위생 — 최신 세션은 항상 문서
+맨 아래에 있다. "맨 아래 번호 큰 것부터" 읽는 규칙(CLAUDE.md)이 이
+문서의 실제 사용 방법이다. 다음 작업 목록은 TODO.md가 단일 출처.)
 
 ---
 
@@ -2250,3 +2250,42 @@ HistoryManager.js 한 파일이며, 기존 87개 테스트(직렬 큐/재귀 방
 2. **`isHistoryApplying()`의 외부 계약은 그대로다** — 반환 의미(replay
    진행 중 여부)가 유지되므로 호출부 확인이 필요 없다(전역 grep으로
    호출부 없음도 확인됨 — export만 존재).
+
+## 9-43. 저장소 위생 — test.html 삭제 + docs/.obsidian gitignore (2026-07-11, TODO P2, 감사 TD-6/TD-7)
+
+### 삭제 근거 (착수 전 확인)
+
+`test.html`(267줄, 루트)은 초기 세션의 수동 테스트 하니스로, 착수 전
+전역 grep으로 **어디서도 참조되지 않음(0건)**을 확인한 뒤 삭제했다.
+삭제를 서두른 이유: 단순히 낡은 파일이 아니라, (1) CommandBus를
+우회하는 `dispatch()` 직접 호출(CLAUDE.md 금지 패턴)을 담고 있어 새
+세션이 참고 패턴으로 오인할 위험이 있었고, (2) `setupCueListDemo()` 등
+데모 버튼이 **실데이터 Page를 일괄 삭제**하는 동작이라 브라우저에서
+실수로 열면 사고 여지가 있었다(같은 origin의 실제 AppStore 데이터를
+로드함). D-028 이후 역할은 node:test + Playwright로 완전히 대체된
+상태였다.
+
+`docs/.obsidian/` 5개 파일은 Obsidian 개인 상태 파일(특히
+workspace.json은 열 때마다 변경됨)이라 `.gitignore` 추가 + `git rm
+--cached`로 추적만 해제했다 — **로컬 파일은 보존됨**(Obsidian 사용에
+영향 없음).
+
+### 검증
+
+- 전체 테스트 88/88 통과 — 앱 코드에 영향 없음.
+- `.gitignore`는 이제 3줄: `node_modules/`, `.claude/settings.local.json`,
+  `docs/.obsidian/`.
+
+### 변경 파일
+
+`test.html`(삭제), `.gitignore`(1줄 추가), `docs/.obsidian/*`(추적
+해제 5파일), `docs/TODO.md`(항목 완료 처리), `docs/CurrentState.md`
+(헤더 + 이 절). 앱 코드 무수정.
+
+### 다음 단계 진입 시 주의사항
+
+1. **남은 미완료 P2는 "데이터 내보내기/가져오기 + persist" 하나다**
+   (9-40 승격). 기술 부채 감사(9-39)의 승격 항목 3건은 이것으로 전부
+   소화됐다(9-41/9-42/9-43).
+2. **Obsidian이 docs/.obsidian/을 다시 만들어도 이제 git에 잡히지
+   않는다** — 의도된 동작이다.
