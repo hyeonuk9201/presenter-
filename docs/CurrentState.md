@@ -3,9 +3,9 @@
 본 문서는 현재 구현 상태를 기록한다.
 최종 목표 구조는 Architecture.md 및 Decisions.md를 따른다.
 
-최종 업데이트: 2026-07-11 (9-40 배포 전략 Research — 최신 세션은 항상
-문서 맨 아래에 있다. "맨 아래 번호 큰 것부터" 읽는 규칙(CLAUDE.md)이
-이 문서의 실제 사용 방법이다. 다음 작업 목록은 TODO.md가 단일 출처.)
+최종 업데이트: 2026-07-11 (9-41 핵심 계층 회귀 테스트 — 최신 세션은
+항상 문서 맨 아래에 있다. "맨 아래 번호 큰 것부터" 읽는 규칙(CLAUDE.md)
+이 이 문서의 실제 사용 방법이다. 다음 작업 목록은 TODO.md가 단일 출처.)
 
 ---
 
@@ -2118,3 +2118,87 @@ D-025 version 관행 — Research 5절). EXE는 착수 조건 전까지 TODO에
    사용 환경" 표기는 당시 테스트 환경 기록으로 읽어야 한다. 운영 환경
    기준 판단은 `Research/2026-07-11 Deployment Strategy.md` 8절이
    최신이다.
+
+## 9-41. 핵심 계층 회귀 테스트 구축 (2026-07-11, TODO P1 — 프로덕션 코드 무수정)
+
+### 배경
+
+기술 부채 감사(9-39, TD-3)에서 승격된 P1 착수. D-028이 자동화 대상으로
+명시하고도 테스트가 0건이던 4개 계층에 회귀 테스트를 깔았다 — D-028의
+원래 근거("HistoryManager/CommandBus를 다시 만지기 전에 동작을 고정")가
+TD-1(감사에서 재현된 잠재 버그) 수정 착수 전에 이행된 것이다.
+
+### 신규 테스트 파일 (전부 co-locate, D-028 배치 규칙)
+
+1. **`persistence/Schema.test.js`** (7건) — CURRENT_SCHEMA_VERSION 고정
+   (버전 상향 시 이 파일 갱신을 강제하는 tripwire), withSchemaVersion,
+   미래 버전 폴백(null), v2 통과, v1→v2 마이그레이션(Range 역산 —
+   sectionIds가 저장 순서가 아니라 startIndex 순인 것, startPageId
+   폐기, 참조 끊긴 Section 제외, 첫 Section 이전 Page는 미분류 유지).
+2. **`store/AppStore.test.js`** (12건) — reduce 전 액션(ADD/UPDATE/
+   REMOVE/SELECT/GO_LIVE/CLEAR/SET_APP_MODE), REMOVE_PAGE의 selection/
+   live 동반 해제, D-003 분리, 무관 Page 참조 유지(BroadcastOutput
+   dedupe가 기대는 성질), 알 수 없는 액션 no-op, deriveMutations
+   (1 dispatch = 1 notify + Mutation 3종 동시 도출, 타겟 통지),
+   D-021 규칙 5(IMPORT는 isModified 미표시/이후 수정 시 표시/REIMPORT
+   리셋).
+3. **`command/CommandBus.test.js`** (7건, fake-indexeddb) — 유효하지
+   않은 Command 무해성, Hook이 dispatch 이후 prevState와 함께 호출
+   (D-018), media preload가 dispatch 전에 캐시를 채움, **직렬 큐 순서
+   보장(D-019가 고친 순서 역전 시나리오 그대로)**, 없는 mediaId 무해
+   통과, bootstrapMediaCache(D-020 — dispatch 없이 캐시만).
+4. **`history/HistoryManager.test.js`** (11건) — 빈 스택 no-op,
+   Ignore 정책 5종, ADD_PAGE 왕복 + **재귀 기록 방지(undo가 주입한
+   Command 미기록)**, REMOVE_PAGE undo의 정확한 위치 복원
+   (INSERT_PAGE_AT), UPDATE_PAGE/SET_TITLE/MOVE_PAGE 왕복,
+   MOVE_PAGE_TO_SECTION undo(위치+sectionId 원자 복원),
+   MOVE_SECTION_GROUP(자기 역연산), HISTORY_LIMIT(100 FIFO),
+   **TD-1 재현 시나리오를 `{ todo: true }` 알려진 실패로 포함**.
+
+### 검증
+
+`node --check` 4파일 전부 통과. 전체 테스트: **88 tests — 87 pass,
+0 fail, 1 todo(TD-1), exit 0.** TD-1 todo 테스트는 실제로 감사 때와
+동일한 오염 패턴(기대 delta -2/+2 대신 -1/+1)으로 실패하며 TODO로
+보고된다 — 수정 후 todo 표시를 제거하면 상시 회귀 가드로 승격된다.
+
+npm install도 이번 세션에서 수행(TD-8 해소 — fake-indexeddb 등
+devDependencies 설치, package-lock.json 무변경).
+
+### 테스트 방법론 노트
+
+- AppStore/HistoryManager는 모듈 싱글톤이라 테스트 간 상태가 누적된다
+  — 절대값 대신 delta 검증 + 자신이 만든 id로만 조회. node --test의
+  파일 단위 프로세스 분리가 파일 간 격리를 보장한다.
+- History 테스트의 fixture 준비는 dispatch() 직접 호출로 한다(Hook은
+  CommandBus 경유에만 걸리므로 기록되지 않음) — Store 단위 테스트에서
+  dispatch 직접 호출이 정당한 이유는 AppStore.test.js 헤더에 명시.
+- HistoryManager 테스트는 mock 없이 실제 CommandBus+AppStore 통합으로
+  돌린다 — D-019 계열 버그가 세 모듈의 상호작용에서 나왔기 때문.
+
+### 실행 환경 주의 (이 세션에서 발견)
+
+Windows 쪽에서 UNC 경로(\\wsl.localhost\...)로 `npm test`를 실행하면
+npm.cmd(cmd.exe 셰임)가 UNC cwd를 지원하지 않아 C:\Windows로 떨어져
+**시스템 폴더 전체를 스캔**한다(무관한 test.js 실행, 5분 소요). 이
+경우 `node.exe --test`를 프로젝트 디렉터리에서 직접 실행할 것. WSL
+안에서 도는 정상적인 npm 환경에서는 해당 없음.
+
+### 변경 파일
+
+`persistence/Schema.test.js`, `store/AppStore.test.js`,
+`command/CommandBus.test.js`, `history/HistoryManager.test.js`(전부
+신규), `docs/TODO.md`(P1 완료 처리, TD-1 Dependency 충족 표시),
+`docs/CurrentState.md`(헤더 + 이 절). **프로덕션 코드 무수정.**
+
+### 다음 단계 진입 시 주의사항
+
+1. **다음 착수 후보는 연속 Undo 수정(P2, TD-1)이다** — 선행 조건이
+   충족됐고, 재현 테스트가 이미 깔려 있어 수정 → todo 제거 → 통과
+   확인의 짧은 루프로 끝난다.
+2. **TD-1 수정 시 `history/HistoryManager.test.js`의 todo 테스트에서
+   `{ todo: true }`를 제거할 것** — 제거하지 않으면 수정이 회귀해도
+   테스트가 잡아주지 않는다.
+3. **Schema 버전을 올리면 `persistence/Schema.test.js`의 버전 고정
+   테스트가 즉시 실패한다** — 의도된 tripwire이며, 마이그레이션
+   테스트를 함께 갱신하라는 신호다.
