@@ -22,8 +22,14 @@
 import { isValidSong } from '../domain/Song.js'
 import { save, load } from '../persistence/StorageAdapter.js'
 
-const STORAGE_KEY = 'tc-presenter-songs'
-const CURRENT_VERSION = 1
+// STORAGE_KEY/CURRENT_VERSION을 export하는 이유: 내보내기/가져오기
+// (persistence/ExportImport.js, D-030)가 이 저장소의 스냅샷을 저장 형식
+// 그대로 봉투에 담고, 가져올 때 같은 키에 써야 하기 때문 — AppStore.js가
+// STORAGE_KEY를 export하는 것과 같은 이유다. 값의 소유권은 이 파일에 있다.
+export const SONG_STORAGE_KEY = 'tc-presenter-songs'
+export const SONG_STORAGE_VERSION = 1
+const STORAGE_KEY = SONG_STORAGE_KEY
+const CURRENT_VERSION = SONG_STORAGE_VERSION
 
 // ─────────────────────────────────────────
 // 검증 (AppSettingsStore.js의 sanitizeAppSettings와 같은 정신 —

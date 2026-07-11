@@ -23,8 +23,13 @@
 import { createDefaultStylePresets, isValidStylePreset } from '../domain/StylePreset.js'
 import { save, load } from '../persistence/StorageAdapter.js'
 
-const STORAGE_KEY = 'tc-presenter-app-settings'
-const CURRENT_VERSION = 1
+// STORAGE_KEY/CURRENT_VERSION을 export하는 이유: SongStore.js의 동일
+// 주석 참조 — 내보내기/가져오기(persistence/ExportImport.js, D-030)가
+// 저장 형식과 키를 공유해야 하기 때문. 값의 소유권은 이 파일에 있다.
+export const APP_SETTINGS_STORAGE_KEY = 'tc-presenter-app-settings'
+export const APP_SETTINGS_STORAGE_VERSION = 1
+const STORAGE_KEY = APP_SETTINGS_STORAGE_KEY
+const CURRENT_VERSION = APP_SETTINGS_STORAGE_VERSION
 
 // ─────────────────────────────────────────
 // 검증 (persistence/Schema.js의 sanitizePresentation과 같은 정신 —

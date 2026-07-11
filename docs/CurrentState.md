@@ -3,7 +3,7 @@
 본 문서는 현재 구현 상태를 기록한다.
 최종 목표 구조는 Architecture.md 및 Decisions.md를 따른다.
 
-최종 업데이트: 2026-07-11 (9-44 Research 탐구 → 승격 4건 + 문서 위생 —
+최종 업데이트: 2026-07-11 (9-45 데이터 내보내기/가져오기 + persist —
 최신 세션은 항상 문서 맨 아래에 있다. "맨 아래 번호 큰 것부터" 읽는
 규칙(CLAUDE.md)이 이 문서의 실제 사용 방법이다. 다음 작업 목록은
 TODO.md가 단일 출처.)
@@ -2351,3 +2351,73 @@ Overlay(Decision 선행) → UI 통지 이행으로 TODO.md에 기록했다.
 3. **UI 통지 이행(TD-4)에 착수하면 새 UI 코드가 legacy `subscribe()`를
    더 늘리지 않도록** 주의 — Overlay UI를 먼저 만들면 legacy 구독이
    1곳 더 생기는 역순 함정이 있다(권장 순서를 지킬 것).
+
+## 9-45. 데이터 내보내기/가져오기 + 저장소 persist (2026-07-11, TODO P2 — D-030)
+
+### 설계 결정 (D-030 신규)
+
+착수 전 TODO 항목이 "설계 시 결정"으로 남겨둔 Media 포함 여부를
+사용자에게 물었고, 사용자가 판단을 위임해 아래 근거로 **제외(텍스트
+데이터만)**를 확정, `D-030`으로 기록했다:
+
+1. 해소 대상 위험(Research 위험 1)의 핵심은 앱 안에서 직접 만든
+   텍스트 데이터(가사 라이브러리·프리셋·행사 구성)의 복구 불가 유실 —
+   Media는 원본 파일이 디스크에 있어 재가져오기 가능.
+2. 영상 blob의 base64 직렬화는 메인 스레드를 수 초 이상 점유할 수
+   있어 D-009(안정적 송출 우선)와 충돌.
+3. 봉투에 포맷 버전이 있어 나중에 Media 포함이 필요하면 버전을 올려
+   추가 가능(Schema.js fallthrough 패턴).
+
+D-030은 형식(자체 버전을 가진 단일 JSON 봉투, 각 저장소 스냅샷을
+저장 형식 그대로 내장)과 가져오기 절차(검증 선행 → 2단계 확인 →
+저장소 쓰기 → 새로고침으로 정규 부팅 경로 재사용)도 함께 확정했다.
+
+### 구현
+
+- **`persistence/ExportImport.js`(신규, 순수 로직)** — DOM/Store
+  런타임 상태를 모른다. `buildExportPayload()`(봉투 구성),
+  `validateImportPayload()`(쓰기 전 검증 — Presentation은 실제 로드
+  경로와 동일한 `migrateSnapshot`+`sanitizePresentation`을 미리
+  통과시켜, 부팅 폴백("손상 → 빈 프로젝트")이 가져오기에서 발동해
+  기존 데이터를 파괴하는 최악 경로를 차단), `applyImportToStorage()`
+  (세 저장소 키에 스냅샷 그대로 쓰기).
+- **`index.html`** — 툴바에 "내보내기"(Blob 다운로드,
+  `tc-presenter-backup-YYYY-MM-DD.json`)/"가져오기" 버튼. 가져오기는
+  파괴적 동작이라 초기화 버튼과 같은 2단계 인라인 확인(9-36 패턴)을
+  공유하되, 파일 선택 대화상자에서 돌아온 직후라는 점을 고려해
+  타임아웃은 3초 대신 5초. `initUI()`에 `navigator.storage.persist()`
+  호출 추가(fire-and-forget이지만 rejection 처리 — TD-2 교훈).
+- **`store/SongStore.js`/`store/AppSettingsStore.js`** — 키/버전
+  상수를 export(1건씩). AppStore가 `STORAGE_KEY`를 export하는 것과
+  같은 이유(소유권은 각 파일에 유지, ExportImport가 공유).
+
+### 검증
+
+- `persistence/ExportImport.test.js` 12건 — 봉투 구성(D-004 제외 포함),
+  왕복, 거부 6종(비객체/마커 없음/미래 봉투/미래 스키마/손상
+  Presentation/Song·AppSettings 구조 손상), 저장소 쓰기. **전체
+  테스트 100/100 통과**(기존 88 + 신규 12).
+- Playwright 브라우저 E2E 17건 — 실제 다운로드 파일 검사, 빈 브라우저
+  복원 왕복(Page/Song/프리셋), 거부 3종 시 기존 데이터 무손상
+  (localStorage 불변 확인), 확인 대기 타임아웃 자동 취소,
+  `storage.persisted()` 조회. 임시 스크립트는 검증 후 삭제(D-028 관행).
+
+### 변경 파일
+
+`persistence/ExportImport.js`/`ExportImport.test.js`(신규),
+`index.html`, `store/SongStore.js`, `store/AppSettingsStore.js`,
+`docs/Decisions.md`(D-030), `docs/TODO.md`, `docs/CurrentState.md`.
+
+### 다음 단계 진입 시 주의사항
+
+1. **남은 P2는 Emergency Overlay(Decision 선행 필수)와 UI 통지
+   이행(TD-4)** — 권장 순서는 Overlay Decision 작성 전이라도 UI 통지
+   이행을 먼저 끝내는 쪽(9-44 주의사항 3 참조).
+2. **개발 환경 주의: WSL에 node가 없다** — node v24는 Windows 쪽에
+   있고, UNC 경로(`\\wsl.localhost\...`)에서 `npm test`를 실행하면
+   npm(cmd 셰임)이 UNC cwd를 지원하지 않아 **C:\Windows로 폴백해 엉뚱한
+   파일을 스캔**한다. 반드시 `node --test`를 직접 실행할 것(node.exe는
+   UNC cwd 정상 동작). Playwright Chromium도 Windows 쪽에 설치돼 있다.
+3. **내보내기 봉투 버전(EXPORT_FORMAT_VERSION)과 저장소 스키마 버전은
+   독립이다(D-030)** — 어느 쪽이든 구조가 바뀌면 각자 버전을 올리고
+   각자의 fallthrough 마이그레이션을 추가한다.

@@ -324,9 +324,13 @@
       background: var(--bg-raised);
       color: var(--text-primary);
     }
-    /* "초기화" 2단계 확인(2026-07-11, confirm() 제거) — 위 .style-preset-actions
-       .btn.is-confirming / .section-list-delete-btn.is-confirming와 동일한 시각 언어 */
-    #clear-btn.is-confirming {
+    /* "초기화"/"가져오기" 2단계 확인(2026-07-11, confirm() 제거) — 위
+       .style-preset-actions .btn.is-confirming /
+       .section-list-delete-btn.is-confirming와 동일한 시각 언어.
+       가져오기(D-030)도 기존 데이터 전체를 덮어쓰는 파괴적 동작이라
+       초기화와 같은 확인 패턴을 공유한다. */
+    #clear-btn.is-confirming,
+    #import-data-btn.is-confirming {
       background: var(--accent-danger);
       border-color: var(--accent-danger);
       color: #fff;
@@ -752,6 +756,9 @@
         <span id="editor-mode-label">편집</span>
         <div class="editor-actions">
           <button class="btn btn-ghost" id="new-page-btn" style="display:none">새 Page</button>
+          <button class="btn btn-ghost" id="export-btn">내보내기</button>
+          <button class="btn btn-ghost" id="import-data-btn">가져오기</button>
+          <input type="file" id="import-file-input" accept="application/json,.json" style="display:none">
           <button class="btn btn-ghost" id="clear-btn">초기화</button>
           <button class="btn btn-ghost" id="save-btn" style="display:none">저장</button>
           <button class="btn btn-ghost" id="add-media-btn">미디어 추가</button>
@@ -974,6 +981,7 @@
   import { getState, getSelectedPage, subscribe, registerSubscriber, getSectionGroups } from './store/AppStore.js'
   import { execute, setHistoryHook, bootstrapMediaCache } from './command/CommandBus.js'
   import { PersistenceSubscriber, onPersistenceStateChange } from './persistence/PersistenceSubscriber.js'
+  import { buildExportPayload, buildExportFileName, validateImportPayload, applyImportToStorage } from './persistence/ExportImport.js'
   import { HistoryHook, undo, redo, canUndo, canRedo } from './history/HistoryManager.js'
   import { importLyrics } from './utils/lyricsImport.js'
   import { generateId } from './utils/id.js'
@@ -1034,6 +1042,19 @@
     createCueList(document.getElementById('cue-list-el'))
     createPreviewPanel(document.getElementById('preview-panel'))
     createBroadcastOutput()
+
+    // ── 저장소 persist 요청 (D-030) ── 브라우저에 이 origin의 저장소를
+    // 축출(eviction) 대상에서 제외해달라고 요청한다. 거부돼도 앱 동작에는
+    // 영향이 없고(백업은 내보내기가 담당), 렌더링과 무관하므로 await하지
+    // 않는다 — 단 fire-and-forget이라도 rejection은 반드시 처리한다
+    // (Research 2026-07-11 Tech Debt Audit TD-2의 교훈).
+    if (navigator.storage && typeof navigator.storage.persist === 'function') {
+      navigator.storage.persist()
+        .then(granted => {
+          if (!granted) console.warn('[Persist] 브라우저가 persistent storage를 거부함 — 주기적 내보내기 백업을 권장')
+        })
+        .catch(err => console.warn('[Persist] persist() 호출 실패:', err))
+    }
   }
 
   // ── Persistence 등록 (D-015, Mutation Subscriber) ──
@@ -2223,6 +2244,109 @@
     getState().presentation.pages
       .map(p => p.id)
       .forEach(id => execute({ type: 'REMOVE_PAGE', payload: { pageId: id } }))
+  })
+
+  // ── 데이터 내보내기/가져오기 (D-030, 2026-07-11) ──────────
+  // 봉투 구성/검증/저장소 쓰기는 persistence/ExportImport.js가 담당하고,
+  // 여기는 브라우저 상호작용(다운로드/파일 선택/새로고침)만 책임진다.
+
+  const exportBtn = document.getElementById('export-btn')
+  exportBtn.addEventListener('click', () => {
+    try {
+      const { presentation } = getState()
+      const payload = buildExportPayload({
+        // PersistenceSubscriber.js가 저장하는 페이로드와 동일 구성 —
+        // presenterState는 애초에 넘기지 않는다(D-004).
+        presentation: {
+          title: presentation.title,
+          pages: presentation.pages,
+          sectionIds: presentation.sectionIds,
+          sectionMap: presentation.sectionMap,
+        },
+        songs: getSongs(),
+        stylePresets: getStylePresets(),
+      })
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = buildExportFileName()
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('백업 파일을 다운로드했습니다.')
+    } catch (err) {
+      console.error('[Export] 내보내기 실패:', err)
+      showToast('내보내기에 실패했습니다 — 콘솔을 확인해주세요.')
+    }
+  })
+
+  // 가져오기는 기존 데이터 세 저장소(Presentation/Song/AppSettings)를
+  // 통째로 덮어쓰는 파괴적 동작이라, "초기화" 버튼과 같은 2단계 인라인
+  // 확인을 거친다(9-36 패턴). 흐름: 클릭 → 파일 선택 → 검증(실패 시
+  // 기존 데이터 무손상 거부, D-030) → 버튼이 확인 대기 상태로 전환 →
+  // 재클릭 시 저장소 쓰기 + 새로고침(정규 부팅 경로로 재로드).
+  const importDataBtn = document.getElementById('import-data-btn')
+  const importFileInput = document.getElementById('import-file-input')
+  const importDataBtnDefaultText = importDataBtn.textContent
+  let pendingImportData = null
+  let importConfirmResetTimer = null
+
+  function resetImportConfirm() {
+    pendingImportData = null
+    importDataBtn.textContent = importDataBtnDefaultText
+    importDataBtn.classList.remove('is-confirming')
+    clearTimeout(importConfirmResetTimer)
+    importConfirmResetTimer = null
+  }
+
+  importDataBtn.addEventListener('click', () => {
+    if (!pendingImportData) {
+      importFileInput.click()
+      return
+    }
+    const data = pendingImportData
+    resetImportConfirm()
+    try {
+      applyImportToStorage(data)
+      // 재주입 대신 새로고침 — 가져온 데이터를 정규 부팅 경로(마이그레이션·
+      // sanitize·미디어 캐시 재구성)로 다시 읽는다(D-030). 새로고침되므로
+      // 토스트는 띄우지 않는다.
+      location.reload()
+    } catch (err) {
+      console.error('[Import] 저장소 쓰기 실패:', err)
+      showToast('가져오기에 실패했습니다 — 브라우저 저장 공간을 확인해주세요.')
+    }
+  })
+
+  importFileInput.addEventListener('change', () => {
+    const file = importFileInput.files[0]
+    importFileInput.value = '' // 같은 파일을 다시 선택해도 change 이벤트가 발생하도록 초기화
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      let parsed
+      try {
+        parsed = JSON.parse(reader.result)
+      } catch {
+        showToast('JSON 파일이 아니거나 파일이 손상되었습니다.')
+        return
+      }
+      const result = validateImportPayload(parsed)
+      if (!result.ok) {
+        showToast(result.reason)
+        return
+      }
+      pendingImportData = result.data
+      importDataBtn.textContent = '전체 덮어쓰기?'
+      importDataBtn.classList.add('is-confirming')
+      // 초기화(3초)보다 긴 5초 — 파일 선택 대화상자에서 돌아온 직후라
+      // 토스트를 읽고 버튼을 다시 누를 시간이 더 필요하다.
+      importConfirmResetTimer = setTimeout(resetImportConfirm, 5000)
+      showToast('기존 데이터를 전부 덮어씁니다 — 버튼을 다시 눌러 확인해주세요.')
+    }
+    reader.onerror = () => showToast('파일을 읽지 못했습니다.')
+    reader.readAsText(file)
   })
 
   // ── 폰트 크기 슬라이더 ───────────────────
