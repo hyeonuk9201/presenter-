@@ -55,7 +55,7 @@ describe('HistoryManager — 기본 동작', () => {
     assert.equal(getState(), before)
   })
 
-  test('Ignore 정책 — SELECT/CLEAR/GO_LIVE/SET_APP_MODE는 기록되지 않는다(Step5/Phase B 확정)', async () => {
+  test('Ignore 정책 — SELECT/CLEAR/GO_LIVE/SET_APP_MODE/EMERGENCY_OVERLAY는 기록되지 않는다(Step5/Phase B/D-031 확정)', async () => {
     const page = createTextPage({ text: 'ignore' })
     dispatch({ type: 'ADD_PAGE', page }) // fixture — 기록 안 됨
 
@@ -66,6 +66,9 @@ describe('HistoryManager — 기본 동작', () => {
     await execute({ type: 'SET_APP_MODE', payload: { mode: 'edit' } })
     await execute({ type: 'CLEAR_LIVE' })
     await execute({ type: 'CLEAR_SELECTION' })
+    // (D-031) 긴급 오버레이 — Ctrl+Z로 해제/재송출되면 운영 중 사고 경로
+    await execute({ type: 'SET_EMERGENCY_OVERLAY', payload: { text: '잠시 대기', position: 'bottom' } })
+    await execute({ type: 'CLEAR_EMERGENCY_OVERLAY' })
     assert.deepEqual(getHistorySnapshot(), before)
   })
 

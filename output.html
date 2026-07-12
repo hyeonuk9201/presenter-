@@ -32,12 +32,51 @@
       font-size: 14px;
       letter-spacing: 0.1em;
     }
+
+    /* ── Emergency Overlay (D-031) ─────────────
+     * #output-container의 "형제"로 둔다 — renderPage()/showStandby()가
+     * container.innerHTML을 통째로 비우므로, 컨테이너 안에 넣으면 매
+     * 렌더마다 오버레이가 지워진다. 형제 + 상위 z-index로 두면
+     * "슬라이드 전환/CLEAR가 오버레이를 건드리지 않고, STANDBY 위에도
+     * 렌더된다"(D-031 결정 4)가 구조적으로 보장된다.
+     * 렌더 순서(요구사항 4): Background → Video → Page Content → Cue →
+     * Emergency Overlay(항상 최상단). */
+    #emergency-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      pointer-events: none; /* 송출 화면 조작(있다면)을 가로막지 않는다 */
+    }
+    #emergency-overlay.is-active { display: flex; }
+    #emergency-overlay.pos-top    { justify-content: flex-start; }
+    #emergency-overlay.pos-middle { justify-content: center; }
+    #emergency-overlay.pos-bottom { justify-content: flex-end; }
+
+    #emergency-overlay-text {
+      background: rgba(0, 0, 0, 0.78);
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 5vh;
+      font-weight: 700;
+      line-height: 1.4;
+      text-align: center;
+      padding: 2vh 4vw;
+      white-space: pre-wrap;
+      word-break: keep-all;
+    }
   </style>
 </head>
 <body>
 
 <div id="output-container">
   <div id="standby">STANDBY</div>
+</div>
+
+<!-- Emergency Overlay (D-031) — output-container의 형제 레이어(위 CSS 주석 참조) -->
+<div id="emergency-overlay">
+  <div id="emergency-overlay-text"></div>
 </div>
 
 <script type="module">
@@ -60,6 +99,20 @@
 
     if (data.type === 'SHOW_PAGE') {
       showPage(data.page)
+      return
+    }
+
+    // (D-031) Emergency Overlay — Page 렌더링과 완전히 직교하므로
+    // renderQueue를 거치지 않고 즉시 반영한다(media resolve 같은 비동기
+    // 단계가 없어 순서 역전이 발생할 수 없고, 긴급 안내는 즉시성이
+    // 최우선이다). CLEAR(STANDBY 전환)는 오버레이를 건드리지 않는다.
+    if (data.type === 'SHOW_OVERLAY') {
+      showOverlay(data.overlay)
+      return
+    }
+
+    if (data.type === 'CLEAR_OVERLAY') {
+      hideOverlay()
     }
   }
 
@@ -195,6 +248,21 @@
     container.innerHTML = ''
     container.appendChild(standby)
     currentSlideEl = null // STANDBY로 돌아가면 "이전 슬라이드"가 없어진다 — 다음 Page는 항상 즉시 교체(cut)로 시작
+  }
+
+  // ── Emergency Overlay (D-031) ─────────────
+  const overlayEl = document.getElementById('emergency-overlay')
+  const overlayTextEl = document.getElementById('emergency-overlay-text')
+
+  function showOverlay(overlay) {
+    if (!overlay || !overlay.text) return // 방어 — 빈 오버레이는 표시하지 않는다
+    overlayTextEl.textContent = overlay.text
+    overlayEl.className = `is-active pos-${overlay.position}`
+  }
+
+  function hideOverlay() {
+    overlayEl.className = ''
+    overlayTextEl.textContent = ''
   }
 </script>
 </body>

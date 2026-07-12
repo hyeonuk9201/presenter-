@@ -33,7 +33,7 @@
  */
 
 import { createPresentation, addPage, removePage, replacePage, movePage, insertPageAt, movePageToSection, setPagePositionAndSection, sanitizePresentation, addSection, removeSection, replaceSection, moveSectionGroup, importSongAsSection, reimportSongIntoSection, markModifiedSongSections, getSectionGroups as getPresentationSectionGroups } from '../domain/Presentation.js'
-import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode } from '../domain/PresenterState.js'
+import { createPresenterState, selectPage, goLive, clearLive, clearSelection, setAppMode, setEmergencyOverlay, clearEmergencyOverlay } from '../domain/PresenterState.js'
 import { migrateSnapshot } from '../persistence/Schema.js'
 import { load as storageLoad } from '../persistence/StorageAdapter.js'
 
@@ -146,6 +146,10 @@ function deriveMutations(actionType, prev, next) {
     prev.presenterState.livePageId !== next.presenterState.livePageId
   const appModeChanged =
     prev.presenterState.appMode !== next.presenterState.appMode
+  // D-031(2026-07-13): 긴급 오버레이 — 설정/해제 모두 이 하나의 Mutation으로
+  // 통지한다(구독자는 state.presenterState.emergencyOverlay의 null 여부로 판단).
+  const overlayChanged =
+    prev.presenterState.emergencyOverlay !== next.presenterState.emergencyOverlay
 
   if (pagesChanged) mutations.push('SET_PAGES')
   if (sectionsChanged) mutations.push('SET_SECTIONS')
@@ -153,6 +157,7 @@ function deriveMutations(actionType, prev, next) {
   if (selectionChanged) mutations.push('SET_SELECTION')
   if (liveChanged) mutations.push('SET_LIVE_PAGE')
   if (appModeChanged) mutations.push('SET_APP_MODE')
+  if (overlayChanged) mutations.push('SET_EMERGENCY_OVERLAY')
 
   return mutations
 }
@@ -370,6 +375,20 @@ function reduce(state, action) {
         ...state,
         presenterState: setAppMode(state.presenterState, action.mode),
       }
+
+    // (D-031) 긴급 안내 오버레이. Presentation을 전혀 건드리지 않는 순수
+    // 운영 상태 — 저장(D-004)/History(Ignore) 모두 제외된다.
+    case 'SET_EMERGENCY_OVERLAY': {
+      const updated = setEmergencyOverlay(state.presenterState, { text: action.text, position: action.position })
+      if (updated === state.presenterState) return state // 빈 text + 이미 비활성 — 변경 없음
+      return { ...state, presenterState: updated }
+    }
+
+    case 'CLEAR_EMERGENCY_OVERLAY': {
+      const cleared = clearEmergencyOverlay(state.presenterState)
+      if (cleared === state.presenterState) return state // 이미 비활성 — 변경 없음
+      return { ...state, presenterState: cleared }
+    }
 
     default:
       console.warn(`[AppStore] 알 수 없는 action: ${action.type}`)

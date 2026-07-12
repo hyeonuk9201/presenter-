@@ -158,6 +158,59 @@ describe('AppStore — deriveMutations / Mutation Subscriber', () => {
   })
 })
 
+describe('AppStore — Emergency Overlay (D-031)', () => {
+  test('SET_EMERGENCY_OVERLAY — presenterState에 설정되고 SET_EMERGENCY_OVERLAY Mutation만 도출된다', () => {
+    const calls = []
+    registerSubscriber({
+      id: 'test-eo-1',
+      interestedMutations: ['SET_EMERGENCY_OVERLAY', 'SET_PAGES', 'SET_LIVE_PAGE'],
+      notify: (mutations) => calls.push(mutations),
+    })
+    dispatch({ type: 'SET_EMERGENCY_OVERLAY', text: '영상 복구 중입니다', position: 'top' })
+    unregisterSubscriber('test-eo-1')
+
+    assert.deepEqual(getState().presenterState.emergencyOverlay, { text: '영상 복구 중입니다', position: 'top' })
+    assert.equal(calls.length, 1)
+    assert.deepEqual(calls[0], ['SET_EMERGENCY_OVERLAY'])
+    dispatch({ type: 'CLEAR_EMERGENCY_OVERLAY' }) // 정리
+  })
+
+  test('livePageId와 직교(D-031 결정 4) — 오버레이 설정/해제가 live/selection을 바꾸지 않는다', () => {
+    const page = createTextPage({ text: 'eo-live' })
+    dispatch({ type: 'ADD_PAGE', page })
+    dispatch({ type: 'GO_LIVE', pageId: page.id })
+
+    dispatch({ type: 'SET_EMERGENCY_OVERLAY', text: '잠시 대기', position: 'bottom' })
+    assert.equal(getState().presenterState.livePageId, page.id)
+
+    dispatch({ type: 'CLEAR_EMERGENCY_OVERLAY' })
+    assert.equal(getState().presenterState.livePageId, page.id)
+    assert.equal(getState().presenterState.emergencyOverlay, null)
+    dispatch({ type: 'CLEAR_LIVE' }) // 정리
+  })
+
+  test('이미 비활성일 때 CLEAR — 상태 변경도 통지도 없다', () => {
+    let called = 0
+    registerSubscriber({
+      id: 'test-eo-3',
+      interestedMutations: ['SET_EMERGENCY_OVERLAY'],
+      notify: () => { called++ },
+    })
+    const before = getState()
+    dispatch({ type: 'CLEAR_EMERGENCY_OVERLAY' })
+    unregisterSubscriber('test-eo-3')
+
+    assert.equal(getState(), before)
+    assert.equal(called, 0)
+  })
+
+  test('빈 text 송출은 해제로 처리된다(도메인 보장 — 빈 오버레이가 화면을 가리는 사고 방지)', () => {
+    dispatch({ type: 'SET_EMERGENCY_OVERLAY', text: '점검 중', position: 'middle' })
+    dispatch({ type: 'SET_EMERGENCY_OVERLAY', text: '   ', position: 'middle' })
+    assert.equal(getState().presenterState.emergencyOverlay, null)
+  })
+})
+
 describe('AppStore — Song Section isModified (D-021 규칙 5)', () => {
   test('IMPORT_SONG_AS_SECTION 자신은 isModified를 세우지 않고, 이후 Page 수정이 세운다', () => {
     const song = createSong({

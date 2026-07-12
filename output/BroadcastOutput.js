@@ -32,6 +32,24 @@ const CHANNEL_NAME = 'tc-presenter-output'
 export function createBroadcastOutput() {
   const channel = new BroadcastChannel(CHANNEL_NAME)
   let lastSentPage = null // 마지막으로 보낸 Page 객체 참조. null = CLEAR 상태
+  let lastSentOverlay = null // 마지막으로 보낸 emergencyOverlay 객체 참조. null = 해제 상태 (D-031)
+
+  // (D-031) 긴급 오버레이는 SHOW_PAGE/CLEAR와 별도 메시지 타입으로 보낸다 —
+  // SHOW_PAGE에 실으면 lastSentPage 참조 비교 dedupe가 깨진다. Page 송출과
+  // 완전히 직교하므로(STANDBY 위에도 렌더, output.html 참조) 서로의 상태를
+  // 전혀 참조하지 않는다.
+  function sendOverlay({ force = false } = {}) {
+    const { emergencyOverlay } = getState().presenterState
+
+    if (!force && emergencyOverlay === lastSentOverlay) return
+    lastSentOverlay = emergencyOverlay
+
+    if (!emergencyOverlay) {
+      channel.postMessage({ type: 'CLEAR_OVERLAY' })
+      return
+    }
+    channel.postMessage({ type: 'SHOW_OVERLAY', overlay: emergencyOverlay })
+  }
 
   function sendState({ force = false } = {}) {
     const { livePageId } = getState().presenterState
@@ -69,13 +87,21 @@ export function createBroadcastOutput() {
   // .md의 "SET_LIVE_PAGE Mutation을 구독한다" 서술과도 이제 일치).
   registerSubscriber({
     id: 'BroadcastOutput',
-    interestedMutations: ['SET_PAGES', 'SET_LIVE_PAGE'],
-    notify: () => sendState(),
+    interestedMutations: ['SET_PAGES', 'SET_LIVE_PAGE', 'SET_EMERGENCY_OVERLAY'],
+    notify: (mutations) => {
+      // Page 송출과 Overlay 송출은 직교 — 발생한 Mutation에 해당하는 쪽만 보낸다.
+      if (mutations.includes('SET_PAGES') || mutations.includes('SET_LIVE_PAGE')) sendState()
+      if (mutations.includes('SET_EMERGENCY_OVERLAY')) sendOverlay()
+    },
   })
 
   channel.onmessage = ({ data }) => {
     if (data.type === 'REQUEST_SYNC') {
       sendState({ force: true })
+      // (D-031) Overlay 상태도 반드시 재전송 — Overlay가 켜진 상태에서
+      // output 창을 나중에 열어도 긴급 안내가 보여야 한다(9-6의 STANDBY
+      // 멈춤 버그와 같은 부류의 재발 방지).
+      sendOverlay({ force: true })
     }
   }
 

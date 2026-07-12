@@ -22,6 +22,13 @@
 
 ## 확인 완료
 
+- [x] **Live Emergency Overlay (D-031)** (9-51) — 2026-07-13
+  Playwright(Chromium) 자동화로 확인, 체크 11건 전부 통과 + JS 에러
+  0건. STANDBY(Live 없음) 위 오버레이 표시, Live 송출과 병행 유지,
+  위치 변경(상/하) 즉시 반영, 해제 시 송출 슬라이드 유지, 늦게 연
+  output 창의 REQUEST_SYNC 오버레이/슬라이드 수신, Ctrl+Z에 오버레이
+  미해제(History Ignore), 컨트롤 is-broadcasting 토글. e2e-verify
+  스킬 템플릿 사용, 스크립트는 검증 후 삭제.
 - [x] **UI 통지 경로 이행 — storeChanged → Mutation 타겟 통지** (9-46,
   코드는 9-45 이후 커밋 `6cf1730`에 포함) — 2026-07-12
   Playwright(Chromium) 자동화로 사후 확인. 이행된 통지 경로 위에서

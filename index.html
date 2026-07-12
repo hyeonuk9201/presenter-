@@ -99,6 +99,60 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
 
+    /* ── Emergency Overlay 컨트롤 (D-031) ──────
+     * 헤더 상시 노출 — Live 운용 중 메뉴 탐색 없이 수 초 내 송출
+     * (Observations 요구사항 1). 송출 중에는 is-broadcasting으로
+     * 송출 버튼이 채워진 빨강이 되고 해제 버튼이 나타난다. */
+    #emergency-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #emergency-text {
+      width: 180px;
+      padding: 5px 8px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-primary);
+      font-size: 12px;
+    }
+    #emergency-position {
+      padding: 5px 4px;
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-primary);
+      font-size: 12px;
+    }
+    #emergency-send-btn {
+      padding: 5px 10px;
+      border: 1px solid var(--accent-danger);
+      border-radius: 4px;
+      background: var(--accent-danger-dim);
+      color: var(--accent-danger);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #emergency-controls.is-broadcasting #emergency-send-btn {
+      background: var(--accent-danger);
+      color: #fff;
+    }
+    #emergency-clear-btn {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg-raised);
+      color: var(--text-primary);
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      display: none;
+    }
+    #emergency-controls.is-broadcasting #emergency-clear-btn { display: inline-block; }
+
     /* 저장 상태 표시 (2026-07-03, 저장 안정성 개선)
      * idle/saving/saved는 눈에 거슬리지 않게 조용히 — failed만 눈에 띄게.
      * 저장 실패는 조용히 넘어가면 다음 주에 열었을 때 데이터가 없는
@@ -707,6 +761,18 @@
 
     <div class="header-spacer"></div>
 
+    <!-- Emergency Overlay 컨트롤 (D-031) — 입력→송출 2단계(요구사항 5), 상/중/하(요구사항 6) -->
+    <div id="emergency-controls">
+      <input type="text" id="emergency-text" placeholder="긴급 안내 문구" maxlength="200">
+      <select id="emergency-position" title="표시 위치">
+        <option value="bottom" selected>하단</option>
+        <option value="middle">중앙</option>
+        <option value="top">상단</option>
+      </select>
+      <button id="emergency-send-btn" title="긴급 안내를 모든 출력에 즉시 송출 (현재 송출 화면은 유지됨)">긴급 송출</button>
+      <button id="emergency-clear-btn" title="긴급 안내 해제 — 원래 화면 즉시 복원">해제</button>
+    </div>
+
     <div id="save-status" class="save-status-idle"></div>
 
     <div id="history-controls">
@@ -1184,6 +1250,39 @@
     notify: (_mutations, state) => syncAppModeUI(state),
   })
   syncAppModeUI(getState()) // 초기 상태 동기화 (통지는 dispatch 이후에만 발동)
+
+  // ── Emergency Overlay 컨트롤 (D-031) ──────
+  // 상태 변경은 CommandBus 경유(SET/CLEAR_EMERGENCY_OVERLAY, History는
+  // Ignore). 버튼 표시 상태는 SET_EMERGENCY_OVERLAY Mutation 구독으로만
+  // 갱신한다 — 클릭 핸들러가 DOM을 직접 바꾸지 않는다(state가 출처).
+  const emergencyControls = document.getElementById('emergency-controls')
+  const emergencyTextInput = document.getElementById('emergency-text')
+  const emergencyPositionSelect = document.getElementById('emergency-position')
+
+  function sendEmergencyOverlay() {
+    const text = emergencyTextInput.value.trim()
+    if (!text) {
+      emergencyTextInput.focus() // 빈 문구는 송출하지 않는다(도메인에서도 해제로 처리 — PresenterState.js)
+      return
+    }
+    execute({ type: 'SET_EMERGENCY_OVERLAY', payload: { text, position: emergencyPositionSelect.value } })
+  }
+
+  document.getElementById('emergency-send-btn').addEventListener('click', sendEmergencyOverlay)
+  emergencyTextInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendEmergencyOverlay() // 긴급 상황 클릭 수 최소화(요구사항 5)
+  })
+  document.getElementById('emergency-clear-btn').addEventListener('click', () => {
+    execute({ type: 'CLEAR_EMERGENCY_OVERLAY' })
+  })
+
+  registerSubscriber({
+    id: 'EmergencyControlsUI',
+    interestedMutations: ['SET_EMERGENCY_OVERLAY'],
+    notify: (_mutations, state) => {
+      emergencyControls.classList.toggle('is-broadcasting', state.presenterState.emergencyOverlay !== null)
+    },
+  })
 
   // ── Output 열기 ──────────────────────────
   const outputBtn = document.getElementById('output-btn')

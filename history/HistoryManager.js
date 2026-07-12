@@ -34,6 +34,9 @@
  *     (computeInverse에서 null 반환). 선택/송출 변경은 일시적 포커스 상태일
  *     뿐 데이터가 사라지지 않으며, "삭제 Undo 1번"이 그 전에 쌓인 선택/송출
  *     변경부터 풀리는 체감이 어색하다는 실사용 확인으로 결정했다.
+ *   - SET_EMERGENCY_OVERLAY / CLEAR_EMERGENCY_OVERLAY도 동일하게 Ignore
+ *     (D-031, 2026-07-13) — 긴급 오버레이는 오히려 더 강한 이유가 있다:
+ *     Ctrl+Z로 오버레이가 해제/재송출되는 건 Live 운영 중 사고 경로다.
  *
  * History Entry 구조 (HistoryArchitecture.md 기준, 이번 단계 최소화):
  *   { id, label, undoCommand, redoCommand, timestamp }
@@ -225,7 +228,9 @@ function computeInverse(action, prevState) {
     case 'CLEAR_SELECTION':
     case 'GO_LIVE':
     case 'CLEAR_LIVE':
-    case 'SET_APP_MODE': { // (TODO-001, Phase B) 모드 전환도 동일하게 Ignore — 데이터 변경 없음
+    case 'SET_APP_MODE': // (TODO-001, Phase B) 모드 전환도 동일하게 Ignore — 데이터 변경 없음
+    case 'SET_EMERGENCY_OVERLAY':
+    case 'CLEAR_EMERGENCY_OVERLAY': { // (D-031) 긴급 오버레이가 Ctrl+Z로 해제되는 건 운영 중 사고 경로 — 해제는 명시적 버튼으로만
       return null
 
       // ── 복원용 원본 로직 (참고용, 현재 비활성) ──
