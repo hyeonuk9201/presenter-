@@ -13,8 +13,10 @@
  *     격리된 부수효과이며, 실패해도 dispatch()를 다시 호출하지 않는다.
  *
  * 책임:
- *   - 관심 Mutation 타입 구독 (Domain Mutation만 등록 — SET_PAGES, SET_SECTIONS,
- *     SET_TITLE, SET_SELECTION, SET_LIVE_PAGE)
+ *   - 관심 Mutation 타입 구독 (저장 내용이 실제로 바뀌는 Domain Mutation만
+ *     등록 — SET_PAGES, SET_SECTIONS, SET_TITLE. SET_SELECTION/SET_LIVE_PAGE는
+ *     저장 페이로드에 애초에 없으므로(D-004) 구독하지 않는다 — 감사 TD-5,
+ *     2026-07-12)
  *   - Runtime State → localStorage 직렬화
  *   - PersistenceState(isDirty, lastSavedAt, saveStatus)를 로컬로 관리하고,
  *     별도 콜백 채널로만 외부에 알림 (AppStore Mutation 경로 사용 안 함)
@@ -130,7 +132,12 @@ export const PersistenceSubscriber = {
   // 별도 채널(onPersistenceStateChange)로 통지하므로 여기 포함하지 않는다.
   // SET_SECTIONS 추가(2026-07-03, FutureEditor.md D-Editor-2) — Section의
   // collapsed/color/note/title은 새로고침 후에도 유지되어야 한다.
-  interestedMutations: ['SET_PAGES', 'SET_SECTIONS', 'SET_TITLE', 'SET_SELECTION', 'SET_LIVE_PAGE'],
+  // SET_SELECTION/SET_LIVE_PAGE 제거(2026-07-12, 감사 TD-5) — 저장 페이로드에
+  // selection/live는 애초에 없어서(D-004) 선택/Live 전환만으로는 저장할 게
+  // 없는데도 presentation 전체 직렬화가 돌고 있었다(D-009 긴장 관계).
+  // REMOVE_PAGE처럼 SET_PAGES와 동반 발생하는 경우는 SET_PAGES가 저장을
+  // 트리거하므로 동작 손실 없음 — PersistenceSubscriber.test.js가 고정한다.
+  interestedMutations: ['SET_PAGES', 'SET_SECTIONS', 'SET_TITLE'],
 
   notify(mutations, state) {
     setPersistenceState({ isDirty: true })

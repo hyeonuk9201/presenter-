@@ -206,8 +206,9 @@ export function dispatch(action) {
   state = next
 
   // (D-015) 저장은 더 이상 여기서 수행하지 않는다.
-  // PersistenceSubscriber가 SET_PAGES / SET_TITLE / SET_SELECTION / SET_LIVE_PAGE
-  // Mutation을 구독하여 dispatch 이후 별도로 저장한다.
+  // PersistenceSubscriber가 SET_PAGES / SET_SECTIONS / SET_TITLE Mutation을
+  // 구독하여 dispatch 이후 별도로 저장한다 (SET_SELECTION/SET_LIVE_PAGE는
+  // 저장 페이로드에 없어 구독 제외 — D-004, 감사 TD-5).
 
   // Mutation 기반 타겟 통지 — 유일한 통지 경로(D-017 코드 이행, 2026-07-11).
   // 이전에 여기 있던 storeChanged 단일 브로드캐스트는 제거됐다.

@@ -9,11 +9,13 @@
 > 다시 설명하지 않는다. 완료된 항목은 체크만 하고 CurrentState.md의
 > 해당 세션 번호(예: 9-11)로 자세한 내용을 넘긴다.
 >
-> 최종 업데이트: 2026-07-13 (Emergency Overlay 선행 Decision 확정 —
-> D-031(PresenterState 필드 + CommandBus 경유·History Ignore + 별도
-> Broadcast 메시지 + livePageId 직교, 출력 대상 선택은 Non-goal), 9-47.
-> 코드 무수정, 구현 착수 가능 상태. 이전: UI 통지 이행(TD-4) 완료 확인
-> + 사후 기록,
+> 최종 업데이트: 2026-07-13 (저장 트리거 정리(TD-5) 사후 마감, 9-48 —
+> 코드+테스트 6건은 2026-07-12에 작성됐으나 미커밋·기록 누락 상태로
+> 발견, 전체 106/106 통과 검증 후 커밋. 같은 날 이전: Emergency
+> Overlay 선행 Decision 확정 — D-031(PresenterState 필드 + CommandBus
+> 경유·History Ignore + 별도 Broadcast 메시지 + livePageId 직교, 출력
+> 대상 선택은 Non-goal), 9-47. 남은 P2는 Emergency Overlay 구현.
+> 이전: UI 통지 이행(TD-4) 완료 확인 + 사후 기록,
 > 9-46 — 코드는 커밋 6cf1730에 이미 반영돼 있었으나 세션 기록/TODO
 > 갱신이 누락돼 있었음. Playwright 사후 E2E 5건으로 회귀 없음 확인.
 > 남은 P2는 Emergency Overlay(Decision 선행)뿐. 이전: 데이터
@@ -120,9 +122,6 @@ Overlay(~~Decision 선행~~ → D-031 확정, 9-47 — 구현만 남음).
 - **"가사 추가" 경로의 Song 통합 검토** — Research 탐구(9-44)에서
   P3 승격. `importLyrics()` 일방향 문제의 근본 해소 후보이나 실사용
   불편 신호 대기 — 상세는 [Feature TODO](#feature-todo) 참조.
-- **저장 트리거 정리 — SET_SELECTION/SET_LIVE_PAGE 저장 제거 (감사
-  TD-5)** — UI 통지 이행(P2)과 같은 시기 처리 권장 — 상세는
-  [Architecture TODO](#architecture-todo) 참조.
 
 ---
 
@@ -199,26 +198,19 @@ Overlay(~~Decision 선행~~ → D-031 확정, 9-47 — 구현만 남음).
 - [x] **UI 통지 경로 이행 — storeChanged → Mutation 타겟 통지 (감사 TD-4, D-017 코드 이행)** — 9-46에서 완료 확인(코드는 커밋 `6cf1730`에 선반영, 세션 기록은 사후 작성)
   - Priority(당시): P2 · Status: 완료 · Reason: 감사 TD-4 승격(9-44) — legacy `subscribe()`(storeChanged) 사용처가 UI 전부였고 매 dispatch마다 전 UI 재통지 · Impact: `ui/CueList.js`/`ui/PreviewPanel.js`/`output/BroadcastOutput.js`/`index.html` 3곳 전부 `interestedMutations` 기반 이행, `store/AppStore.js`의 legacy `subscribe()` 제거 · Dependency: 회귀 테스트(9-41, 충족) · Risk: 중간이었으나 Mutation 매핑 누락 없음이 사후 E2E로 확인됨 · Completion Criteria: legacy 구독 0곳(전역 grep 확인) + 전체 테스트 100/100 + Playwright 사후 E2E 5건(부팅/SET_PAGES/SET_SELECTION/PreviewPanel 반영/전체 상호작용 에러 0건) 통과(충족, 9-46). **경위 주의**: 이 작업은 코드만 커밋(`6cf1730 "chore: add Claude Code skills and updates"`)되고 세션 기록/TODO 갱신이 누락된 채 발견됨 — 마감 루틴 누락 사례로 9-46에 기록.
 
-- [ ] **저장 트리거 정리 — SET_SELECTION/SET_LIVE_PAGE 저장 제거 (감사 TD-5)**
-  - Priority: P3 · Status: 예정(UI 통지 이행과 같은 시기 처리 권장)
-  - Reason: 기술 부채 감사(9-39, TD-5)에서 확인, Research 탐구(9-44)
-    에서 사용자 승인으로 승격. `PersistenceSubscriber`의
-    `interestedMutations`에 `SET_SELECTION`/`SET_LIVE_PAGE`가 포함돼,
-    Page를 클릭하거나 Live 송출을 넘길 때마다 내용이 전혀 안 바뀐
-    presentation 전체를 직렬화+localStorage 쓰기 한다(저장 페이로드에
-    selection/live는 애초에 없음 — `D-004`). Live 진행 중 매 슬라이드
-    전환마다 전체 직렬화가 도는 셈이라 `D-009`(안정적 송출 우선)와
-    긴장 관계인 성능 부채다 — 버그가 아니라 의도된 동등 이전(파일
-    주석 명시)이었으므로 P3.
-  - Impact: `persistence/PersistenceSubscriber.js`(목록에서 2건 제거 +
-    주석 갱신).
-  - Dependency: 없음 — 회귀 테스트(9-41)로 동작 동등성 확인 가능.
-  - Risk: 낮음 — `D-004`/`D-015` 경계 불변(감사 문서에서 확인 — 저장
-    트리거만 줄고 저장 내용/경로는 그대로). REMOVE_PAGE처럼 SET_PAGES와
-    동반되는 경우는 어차피 저장되므로 동작 손실 없음을 테스트로 확인할
-    것.
-  - Completion Criteria: 선택/Live 전환만으로는 저장이 발생하지 않고,
-    내용 변경(SET_PAGES 등) 시 저장은 정상 동작 + 전체 테스트 통과.
+- [x] **저장 트리거 정리 — SET_SELECTION/SET_LIVE_PAGE 저장 제거 (감사 TD-5)** — 9-48에서 완료(코드는 2026-07-12에 작성됐으나 미커밋·기록 누락 상태로 발견, 사후 마감)
+  - Priority(당시): P3 · Status: 완료 · Reason: 기술 부채 감사(9-39,
+    TD-5) — 저장 페이로드에 selection/live가 애초에 없는데도(`D-004`)
+    Page 클릭/Live 전환마다 presentation 전체 직렬화+localStorage
+    쓰기가 돌았음(`D-009`와 긴장 관계인 성능 부채) · Impact:
+    `persistence/PersistenceSubscriber.js`(`interestedMutations`에서
+    2건 제거 + 주석 갱신), `store/AppStore.js`(주석만),
+    `persistence/PersistenceSubscriber.test.js`(신규 6건) · Dependency:
+    없음 · Risk: 낮음(검증됨 — REMOVE_PAGE처럼 SET_PAGES와 동반 발생
+    시 저장 정확히 1회를 테스트로 고정) · Completion Criteria:
+    선택/Live 전환만으로는 저장 미발생 + 내용 변경 시 정상 저장 +
+    전체 테스트 통과(충족, 9-48 — 106/106). **경위 주의**: 6cf1730
+    (9-46)과 같은 마감 루틴 누락 부류의 재발 사례 — 상세는 9-48.
 
 - [x] **Asset/Song 관계 재검토** — 9-28에서 해소
   - Priority(당시): P1 · Status: 완료 · Reason: Song을 Asset의 하위 타입으로 둘지 별도로 둘지가 Library 설계 전체를 좌우함 · Impact: `domain/Song.js`, `AssetArchitecture.md`와의 경계 확정 · Dependency: 없음 · Risk: 낮음(이미 검증됨) · Completion Criteria: `D-026`/`D-027`로 확정, Song은 별도 Aggregate·MVP 범위는 "가사 저장"만(충족). Reflow 도입 여부는 별도 열린 질문으로 남음(`Research/Observations.md` 2026-07-05) — 실사용 신호 생기면 재검토, 지금은 항목화하지 않음.
