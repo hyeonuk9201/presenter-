@@ -2421,3 +2421,55 @@ D-030은 형식(자체 버전을 가진 단일 JSON 봉투, 각 저장소 스냅
 3. **내보내기 봉투 버전(EXPORT_FORMAT_VERSION)과 저장소 스키마 버전은
    독립이다(D-030)** — 어느 쪽이든 구조가 바뀌면 각자 버전을 올리고
    각자의 fallthrough 마이그레이션을 추가한다.
+
+## 9-46. UI 통지 이행(TD-4) 완료 확인 + 사후 기록 (2026-07-12)
+
+### 배경 — 이 세션은 사후 기록이다
+
+TODO에 "예정"으로 남아있던 UI 통지 이행(TD-4, D-017 코드 이행)이
+실제로는 **이미 구현·푸시돼 있음을 발견**했다. 코드는 커밋
+`6cf1730 "chore: add Claude Code skills and updates"`(2026-07-12
+01:35)에 skills 추가와 섞여 들어갔고, 마감 루틴(세션 기록/TODO
+갱신/ManualTestChecklist)이 통째로 누락됐다. 커밋 메시지만 봐서는
+TD-4가 들어있는지 알 수 없어 사용자도 "작업했던 것 같은데"라고만
+기억하는 상태였다 — 마감 루틴 누락이 만드는 전형적 비용. 같은
+이메일 오타(`hyoenuk92@`) identity로 커밋된 것도 이 시기다(이후
+교정, CLAUDE.md 커밋 절 참조).
+
+### 확인 내용 (구현은 이 세션에서 하지 않음, 검증만)
+
+- **legacy `subscribe()`(storeChanged) 사용처 0곳** — 전역 grep 확인.
+  `store/AppStore.js`에서 `subscribe()` 자체가 제거됐고 파일 주석에
+  D-017 코드 이행 경위가 이미 적혀 있음(2026-07-11자).
+- **이행 분포**: `ui/CueList.js`(SET_PAGES/SET_SECTIONS/SET_SELECTION/
+  SET_LIVE_PAGE), `ui/PreviewPanel.js`(+SET_APP_MODE),
+  `output/BroadcastOutput.js`(SET_PAGES/SET_LIVE_PAGE),
+  `index.html` 구독 3곳 — 전부 `interestedMutations` 기반.
+- **전체 테스트 100/100 통과** (이 컨테이너에서 재실행).
+- **Playwright 사후 E2E 5건 통과**: 부팅 JS 에러 0건 → 가사
+  추가(SET_PAGES)로 CueList 항목 0→2 → Page 클릭(SET_SELECTION)으로
+  `is-selected` 부여 + PreviewPanel 내용 반영 → 더블클릭 Live
+  전환/스타일 숫자 변경 포함 전체 상호작용 후에도 JS 에러 0건.
+  임시 스크립트는 검증 후 삭제(D-028 관행). 상세는
+  `ManualTestChecklist.md` 참조.
+
+### 변경 파일
+
+`docs/TODO.md`(TD-4 완료 처리 + 로드맵 갱신),
+`docs/ManualTestChecklist.md`(사후 검증 기록),
+`docs/CurrentState.md`(이 절) — **코드 무수정**.
+
+### 다음 단계 진입 시 주의사항
+
+1. **남은 P2는 Emergency Overlay 하나** — 착수 전 새 Decision(Overlay
+   State 위치, CommandBus 경유 여부, D-004와의 관계) 필수. 통지
+   경로가 정리됐으므로 Overlay 구독은 처음부터 `interestedMutations`로
+   설계할 것.
+2. **TD-5(저장 트리거 정리)는 여전히 미완료** — "TD-4와 같은 시기
+   처리 권장"이었으나 6cf1730에 포함되지 않았음을 grep으로 확인
+   (`PersistenceSubscriber.js`에 SET_SELECTION/SET_LIVE_PAGE 잔존).
+   P3 그대로 유지.
+3. **마감 루틴 누락 재발 방지**: 이 사례가 스킬 감사(별도 논의 중)에서
+   제안된 session-closeout 스킬의 실증 근거다 — 작업 커밋에 문서
+   갱신이 동반되지 않으면 다음 세션이 완료된 일을 다시 하려 들거나
+   (이번처럼) 상태 파악에 비용이 든다.
