@@ -62,3 +62,5 @@
 ## Skills
 - domain/, store/, persistence/, command/, history/ 아래 파일을 수정하거나 새 모듈 파일을 만들기 전: .claude/skills/architecture-review 적용.
 - 기존 코드 수정: .claude/skills/fnr-patch — 파일 전체 재작성 금지, Edit 도구로 해당 부분만 최소 패치.
+- ui/*.js, index.html/output.html 변경을 커밋하기 전: .claude/skills/e2e-verify — 동작 검증된 Playwright 템플릿을 그대로 사용한다.
+- 작업 완료 후 커밋 직전: .claude/skills/session-closeout — 위 "세션 마감 순서"의 실행 절차(명령 포함).
