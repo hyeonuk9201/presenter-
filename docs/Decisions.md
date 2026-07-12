@@ -1335,3 +1335,93 @@ Architecture 계열 문서나 Future*.md를 참조할 필요 자체가 없었다
 추가. 관련 문서: `Research/2026-07-11 Deployment Strategy.md`(선택지
 B), `docs/TODO.md`의 해당 항목, D-004/D-009/D-016/D-025.
 
+---
+
+# D-031
+
+## Emergency Overlay는 PresenterState 필드로 두고, CommandBus를 경유하되 Undo하지 않는다
+
+### 결정
+
+1. **State 위치 — PresenterState 필드.**
+   `emergencyOverlay: { text, position } | null`을 PresenterState에
+   추가한다(`position`은 `'top' | 'middle' | 'bottom'`, `null`이 곧
+   비활성 — 별도 `active` 플래그를 두지 않는다). Overlay는
+   selectedPageId/livePageId와 같은 부류의 **런타임 운영 상태**이며,
+   D-004("행사 진행 중에만 의미 있다, 저장하지 않는다")의 우산에 그대로
+   들어간다 — 저장/내보내기(D-030) 제외가 별도 코드 없이 구조적으로
+   보장된다. **요구사항 해석 명시**: Observations(2026-07-08) 요구사항
+   2의 "독립된 State"는 "**Presentation과 분리**"로 해석한다 —
+   PresenterState로부터의 분리까지 요구한 것이 아니다. 이 해석은
+   Overlay Engine 확장(Non-goal 참조) 착수 시 재검토한다.
+2. **변경 경로 — CommandBus 경유, History는 Ignore.**
+   `SET_EMERGENCY_OVERLAY` / `CLEAR_EMERGENCY_OVERLAY` 액션을
+   추가하고 모든 변경은 `CommandBus.execute()`를 경유한다
+   (PresenterState 변경은 전부 CommandBus 경유라는 기존 일관성 유지).
+   단 `computeInverse()`는 SELECT_PAGE/GO_LIVE 등과 같은 Ignore
+   블록에서 null을 반환한다 — 긴급 오버레이가 Ctrl+Z로 해제되는 것은
+   운영 중 사고 경로이며, 해제는 명시적 버튼으로만 한다. 통지는
+   `deriveMutations()`에 `SET_EMERGENCY_OVERLAY` Mutation을 추가해
+   기존 `interestedMutations` 경로(D-017)를 그대로 탄다.
+3. **송출 — 별도 Broadcast 메시지 + REQUEST_SYNC 포함.**
+   `BroadcastOutput.js`는 기존 `SHOW_PAGE`/`CLEAR`와 **별도의 메시지
+   타입**(`SHOW_OVERLAY` / `CLEAR_OVERLAY`)으로 Overlay를 전송한다 —
+   `SHOW_PAGE`에 실으면 `lastSentPage` 참조 비교 dedupe가 깨진다.
+   **`REQUEST_SYNC` 응답 시 현재 Overlay 상태도 반드시 재전송한다** —
+   Overlay가 켜진 상태에서 output 창을 나중에 열어도 긴급 안내가
+   보여야 한다(9-6의 STANDBY 멈춤 버그와 같은 부류의 재발 방지).
+4. **livePageId와 직교 — STANDBY 위에도 렌더된다.**
+   Overlay 상태는 livePageId와 완전히 독립이다. output.html은 Live
+   Page가 없는 STANDBY/CLEAR 화면 위에도 Overlay를 렌더링하고,
+   `CLEAR` 메시지(Live 해제)는 Overlay를 지우지 않는다 — Observations의
+   돌발 상황 목록에 "행사 시작 지연, 잠시 대기 안내"가 있고, 이는
+   아직 아무것도 Live가 아닌 시점의 시나리오다.
+5. **렌더 우선순위** — Observations 요구사항 4 그대로: Background →
+   Video → Page Content → Cue → **Emergency Overlay**(항상 최상단).
+
+### 이유
+
+- **PresenterState 채택(별도 Store 기각)**: SongStore/AppSettingsStore
+  분리의 근거는 "영속 데이터인데 Undo가 필요 없다"였다(D-027).
+  Overlay는 영속 자체가 필요 없으므로 분리 근거였던 속성이 없고,
+  별도 Store로 가면 Mutation Subscriber 통지 경로를 못 타 output.html
+  송출 연결을 따로 발명해야 한다. Overlay Engine 확장으로 PresenterState가
+  비대해진다는 우려는 YAGNI로 보류한다(Auto Advance 보류와 같은 판단)
+  — MVP는 필드 하나로 가고, 확장 트리거가 실제로 오면 그때 재검토한다.
+- **History Ignore**: 기존 Recording Policy(HistoryManager.js —
+  "선택/송출 변경은 일시적 포커스 상태일 뿐 데이터가 사라지지 않는다")가
+  Overlay에 그대로 적용된다. 오히려 Overlay는 Undo에 걸리면 안 되는
+  더 강한 이유(운영 중 오조작 경로)가 있다.
+- **별도 메시지 타입 + SYNC 포함**: BroadcastChannel은 발신 시점의
+  리스너에게만 전달된다 — output 창을 늦게 여는 경우는 이미 실사용에서
+  확인된 패턴(9-6)이므로 Decision 수준에서 못 박는다.
+
+### Non-goal
+
+- **출력 대상 선택(Observations 요구사항 7)** — MVP는 "모든 출력에
+  송출"로 고정한다. 현재 출력 구조는 BroadcastChannel 1:N 동일 내용
+  방송이라 출력 창에 identity 개념 자체가 없다 — 요구사항 7은 출력이
+  늘어나면 되는 게 아니라 **출력 식별 구조(identity/registry)라는
+  선행 구조**가 필요한 항목이다. 재검토 트리거: 다중 출력 구조 착수
+  (Window Management API Research, Observations 2026-07-11이 전조).
+- **Overlay Engine(Countdown/QR/방송 전용 자막 등)** — 이번 설계가
+  첫 기능이 될 수 있게 렌더 레이어/메시지 타입을 일반화 가능한 이름으로
+  두는 정도까지만 하고, Engine 구조(복수 Overlay, 타입별 렌더러)는
+  만들지 않는다. 착수 시 결정 1의 State 위치 해석부터 재검토.
+- **애니메이션, 스타일 편집, 템플릿 관리, 이미지/동영상 Overlay** —
+  Observations MVP 제외 목록 그대로.
+- **Undo 지원** — 결정 2에 의해 의도적으로 제외(Non-goal이자 설계
+  결정).
+
+### 결과
+
+영향 파일: `domain/PresenterState.js`(필드 + 전환 함수),
+`store/AppStore.js`(reducer 케이스 2개 + `deriveMutations()`),
+`history/HistoryManager.js`(Ignore 블록에 케이스 추가),
+`output/BroadcastOutput.js`(SHOW_OVERLAY/CLEAR_OVERLAY +
+REQUEST_SYNC 재전송), `output.html`(최상단 Overlay 레이어),
+`index.html`(Live 운용 화면 상시 노출 UI — 입력→송출 2단계, 상/중/하
+선택). 관련 문서: `Research/Observations.md` 2026-07-08,
+D-004(저장 제외)/D-009(안정적 송출 우선)/D-017(Mutation 통지)/
+D-027(별도 Store 기각 근거 대비).
+

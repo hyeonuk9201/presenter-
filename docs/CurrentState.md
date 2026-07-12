@@ -2473,3 +2473,66 @@ TD-4가 들어있는지 알 수 없어 사용자도 "작업했던 것 같은데"
    제안된 session-closeout 스킬의 실증 근거다 — 작업 커밋에 문서
    갱신이 동반되지 않으면 다음 세션이 완료된 일을 다시 하려 들거나
    (이번처럼) 상태 파악에 비용이 든다.
+
+## 9-47. Emergency Overlay 선행 Decision 확정 — D-031 (2026-07-13, 코드 무수정)
+
+### 배경
+
+9-46이 남긴 유일한 P2인 Live Emergency Overlay는 "착수 전 새 Decision
+필수"가 Dependency였다. 이 세션은 그 Decision 논의만 수행했다 —
+구현은 하지 않았다.
+
+논의는 사용자가 근거 자료(Observations 2026-07-08 요구사항 7개,
+D-004, PresenterState 구조)를 직접 읽고 3개 질문에 대한 분석/추천을
+제시 → 어시스턴트가 실제 소스(D-004 원문, `store/AppStore.js`의
+`deriveMutations()`, `history/HistoryManager.js`의 Recording Policy,
+`output/BroadcastOutput.js`, `domain/PresenterState.js`)와 대조 검증
+→ 3개 추천 모두 동의 + 코드 대조에서 발견한 추가 설계 지점 2개 제안
+→ 사용자 동의로 확정, 순서로 진행됐다.
+
+### 확정 내용 (상세는 Decisions.md D-031)
+
+1. **State 위치**: PresenterState 필드
+   `emergencyOverlay: { text, position } | null` — 별도 Store 기각
+   (SongStore 분리 근거였던 "영속인데 Undo 불필요" 속성이 Overlay에는
+   없음 — 영속 자체가 불필요). D-004 우산 아래라 저장/내보내기 제외가
+   구조적으로 공짜.
+2. **변경 경로**: SET_EMERGENCY_OVERLAY / CLEAR_EMERGENCY_OVERLAY
+   액션, CommandBus 경유. History는 기존 Ignore 블록(SELECT_PAGE 등)에
+   추가 — 긴급 오버레이가 Ctrl+Z로 해제되는 건 운영 중 사고 경로.
+3. **송출**: SHOW_PAGE와 별도 메시지 타입(SHOW_OVERLAY/CLEAR_OVERLAY,
+   lastSentPage dedupe 보호) + **REQUEST_SYNC 응답에 Overlay 상태
+   재전송 포함**(9-6 STANDBY 멈춤과 같은 부류의 재발 방지 — 코드 대조
+   에서 발견한 추가 지점 1).
+4. **livePageId 직교**: STANDBY/CLEAR 화면 위에도 Overlay 렌더, CLEAR
+   메시지가 Overlay를 지우지 않음 — "행사 시작 지연" 시나리오는 아직
+   아무것도 Live가 아닌 시점(추가 지점 2).
+5. **Non-goal**: 출력 대상 선택(Observations 요구사항 7) — 현재
+   BroadcastChannel은 1:N 동일 방송이라 출력 identity 개념 자체가
+   없음. 출력 식별 구조가 선행돼야 하는 항목이므로 MVP는 "모든 출력에
+   송출" 고정. Overlay Engine/애니메이션/스타일 편집/Undo도 Non-goal.
+
+### 변경 파일
+
+`docs/Decisions.md`(D-031 신규), `docs/TODO.md`(Emergency Overlay
+항목 Dependency 충족 처리 + 헤더 갱신), `docs/CurrentState.md`(이 절)
+— **코드 무수정**.
+
+### 검증
+
+문서만 변경이므로 테스트/E2E 해당 없음(D-028 대상 아님).
+
+### 다음 단계 진입 시 주의사항
+
+1. **Emergency Overlay 구현은 D-031 경계 안에서만** — 특히 구현 중
+   빠뜨리기 쉬운 두 지점: REQUEST_SYNC에 Overlay 재전송 포함,
+   STANDBY 위 Overlay 렌더(Live일 때만 그리도록 좁혀 만들지 말 것).
+2. **HistoryManager Ignore 추가 시** 기존 case 블록
+   (`HistoryManager.js`의 SELECT_PAGE~SET_APP_MODE)에 새 액션 2개를
+   같은 방식(null 반환)으로 추가하고, 9-41의 Ignore 정책 테스트에
+   케이스를 추가할 것.
+3. **검증 범위(D-028)**: domain/store/history 변경이므로 co-locate
+   테스트 + `node --test` 전체 통과 필수, output.html/index.html
+   변경이므로 Playwright 임시 E2E(송출 중 오버레이 켜고 끄기, 슬라이드
+   전환과 병행, output 늦게 열기 SYNC 시나리오) + ManualTestChecklist
+   한 줄 기록.
