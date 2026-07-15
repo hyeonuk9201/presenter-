@@ -2897,3 +2897,79 @@ BroadcastChannel(output.html 통신)/도메인/Store/Persistence 무수정.
 3. 남은 항목은 전부 P3이고 대부분 Decision 선행(⚠ D-024/D-027, text+media
    범위 정의) 또는 Research 단계다 — TODO.md "나중에" 절 참조. 임의 착수
    금지, 사용자 지정/트리거 확인 후 진행.
+
+---
+
+## 9-54. 텍스트 Page 배경 미디어 — 배경형 (2026-07-15, D-032)
+
+### 배경
+
+`Observations.md` 2026-07-14 #3 "텍스트에 이미지/영상 삽입"(사용자가
+시도했으나 안 됐다고 보고). 비대칭이 원인: image/video Page + 텍스트
+오버레이는 되는데(9-7/9-17), 그 반대(text Page + 배경 미디어)는 없었다.
+범위가 배경형(A, flat 필드)/자유배치(B, Element 모델)로 갈려 **사용자가
+A를 착수 지정**. Page.js/PageView.js가 이미 `// Future: backgroundMediaId`로
+예고해 둔 자리라, 승인된 "플랫 필드 stopgap" 전략의 이행이다.
+
+착수 전 architecture-review 스킬 적용 → D-032 확정 후 구현.
+
+### 구현 (D-032)
+
+- **domain/Page.js**: `createTextPage`에 `backgroundMediaId`(string|null),
+  `backgroundMediaType`('image'|'video'|null) 추가. type을 함께 저장하는
+  이유: PageView가 순수 동기라 MediaStore 조회 불가 → Page가 img/video를
+  알려줘야 함. isValidPage에 방어(id 있으면 type 정합성 확인, 없으면 통과 =
+  기존 데이터 하위 호환). image/video Page엔 안 넣음(콘텐츠가 이미 배경).
+- **view/PageView.js**: `createPageView(page, media, backgroundMedia)`
+  3번째 인자 추가. text 브랜치에서 backgroundMediaId 있으면 배경 레이어
+  (backgroundMediaType에 따라 기존 createImageLayer/createVideoLayer 재사용)를
+  텍스트 레이어 앞에 append(텍스트가 위, image Page 오버레이와 동일 DOM 순서).
+- **command/CommandBus.js**: `preloadMedia`가 mediaId·backgroundMediaId를
+  `Promise.all`로 병렬 조회(단건 로직은 `preloadMediaId` 헬퍼로 분리).
+  MEDIA_COMMANDS whitelist·호출부 무변경.
+- **ui/PreviewPanel.js / output.html**: backgroundMediaId를 각각 peek(동기)/
+  resolveMedia(async)로 해석해 3번째 인자로 전달.
+- **index.html**: (a) 사이드바 "전환" 다음에 `#bg-media-row`(status +
+  제거 버튼), (b) `updateBackgroundIndicator()` + `BackgroundIndicator`
+  subscriber(SET_SELECTION/SET_PAGES — loadEditorForm은 선택 변경 시에만
+  실행돼 배경 갱신엔 부적합하므로 별도 등록) + 제거 버튼 핸들러(UPDATE_PAGE로
+  배경 null화), (c) 라이브러리 항목에 "배경으로 적용" 버튼(선택된 text Page
+  대상, UPDATE_PAGE).
+
+**아키텍처 무변경 확인(architecture-review)**: 배경 적용/제거는 UPDATE_PAGE
+재사용 → 기존 SET_PAGES Mutation 그대로, History는 Page 전체 스냅샷 inverse가
+새 필드 자동 커버, MediaStore는 기존 mediaId 참조만(D-027 경계 유지).
+가법 옵셔널 필드 + sanitizePresentation이 `{...page}`로 보존 → 스키마 bump
+불필요.
+
+### 변경 파일
+
+- `domain/Page.js`, `domain/Page.test.js`(신규)
+- `view/PageView.js`
+- `command/CommandBus.js`, `command/CommandBus.test.js`
+- `ui/PreviewPanel.js`, `output.html`, `index.html`
+- `docs/Decisions.md`(D-032), `docs/TODO.md`, `docs/ManualTestChecklist.md`
+
+### 검증
+
+- `node --test` 전체 142/142(fail 0). 신규: Page.test.js(기본값/보존/
+  isValidPage 4케이스/image·video 배경 필드 부재), CommandBus.test.js
+  배경 preload 회귀 2건.
+- Playwright E2E 9건(e2e-verify 임시 스크립트, 검증 후 삭제): 텍스트 Page
+  선택 → 라이브러리 배경 적용 → Preview media+text 레이어 렌더(배경
+  img=blob URL) → 사이드바 표시/status/제거 버튼 → 운영 GO_LIVE 시
+  output.html 배경 렌더 → 제거 시 media-layer 사라짐. JS 에러 0건.
+
+### 다음 단계 진입 시 주의사항
+
+1. **자유 배치(B, Element 모델)는 D-032 Non-goal.** "텍스트 안 임의
+   위치/크기 미디어 삽입" 요구가 다시 오면 배경형으로 늘리지 말고 Element
+   모델 전환 트리거("한 Page에 독립 편집 콘텐츠 3개 이상")와 함께 재검토.
+2. 배경 렌더는 기존 미디어 레이어 재사용이라 `object-fit: contain`
+   고정이다(배경이 letterbox될 수 있음). 배경 영상은 createVideoLayer
+   재사용이라 controls가 노출된다 — 둘 다 D-032 Non-goal(범위 단순화).
+   cover/컨트롤 숨김이 필요하면 별도 Decision.
+3. text Page는 배경이 생겨도 여전히 `type:'text'`다(콘텐츠 주체 기준).
+   "text+미디어"를 만드는 경로가 둘(미디어 Page+오버레이 / text Page+배경)이
+   된 건 의도된 중복 — 후자는 Song 가사 Page(text)에 배경을 입혀 Song
+   연결을 유지하는 워크플로우다(D-032 이유 참조).

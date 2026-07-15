@@ -76,6 +76,8 @@ export function createTextPage({
   fontWeight = 'normal',
   textStroke = 0,
   textShadow = false,
+  backgroundMediaId = null,
+  backgroundMediaType = null,
   transition,
   autoAdvance,
   sectionId = null,
@@ -108,11 +110,20 @@ export function createTextPage({
     textStroke,      // 외곽선 두께(px). 0이면 없음. 색상은 검정 고정(범위 단순화, 영상 배경 대비용 표준 조합).
     textShadow,      // 그림자 on/off. 세부 오프셋/불투명도 조정 없음(범위 단순화).
 
+    // ── Background Media (2026-07-15, D-032) ──
+    // 텍스트 뒤에 까는 배경 미디어. image/video Page의 오버레이(콘텐츠+텍스트)와
+    // 대칭인 텍스트측 진입점 — 특히 Song에서 생성된 가사 Page(text 타입)에
+    // 배경 영상/이미지를 입히는 용도. mediaId는 MediaStore(IndexedDB) 참조일
+    // 뿐이며(image Page의 mediaId와 동일), blob 같은 휘발성 값은 안 들어간다.
+    // backgroundMediaType을 함께 두는 이유: view/PageView.js가 순수 동기라
+    // MediaStore를 조회 못 해, 배경이 img인지 video인지 Page가 알려줘야 한다.
+    backgroundMediaId,   // string | null — null이면 배경 없음
+    backgroundMediaType, // 'image' | 'video' | null
+
     // ── Behavior (2026-07-03, 뼈대만) ──────
     ...createBehaviorDefaults({ transition, autoAdvance }),
 
     // ── Future (미구현) ────────────────────
-    // backgroundMediaId: null, // 배경 미디어
     // backgroundColor: null,   // 배경 단색
     // stylePresetId: null,     // StylePreset 도입 시
   }
@@ -233,6 +244,14 @@ export function isValidPage(page) {
 
   if (page.type === 'image' || page.type === 'video') {
     if (!page.mediaId || typeof page.mediaId !== 'string') return false
+  }
+
+  // 배경 미디어(D-032, 2026-07-15) — 옵셔널 필드라 없으면(기존 데이터 포함)
+  // 통과시키되, 있으면 타입 정합성만 방어적으로 확인한다. id가 있으면 type도
+  // image/video여야 렌더러가 레이어를 고를 수 있다.
+  if (page.backgroundMediaId !== null && page.backgroundMediaId !== undefined) {
+    if (typeof page.backgroundMediaId !== 'string') return false
+    if (page.backgroundMediaType !== 'image' && page.backgroundMediaType !== 'video') return false
   }
 
   // D-Editor-4(2026-07-06): sectionId는 string 또는 null만 허용.

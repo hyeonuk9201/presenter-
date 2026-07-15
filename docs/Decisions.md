@@ -1425,3 +1425,82 @@ REQUEST_SYNC 재전송), `output.html`(최상단 Overlay 레이어),
 D-004(저장 제외)/D-009(안정적 송출 우선)/D-017(Mutation 통지)/
 D-027(별도 Store 기각 근거 대비).
 
+# D-032
+
+## 텍스트 Page는 배경 미디어(backgroundMediaId)를 플랫 필드로 가진다 — Element 모델 없이
+
+### 결정
+
+`Observations.md`(2026-07-14 #3) "텍스트에 이미지/영상 삽입" 요구를,
+**텍스트 Page 뒤에 배경 미디어를 까는 배경형(background)** 으로 한정해
+구현한다. 자유 배치(텍스트 안 임의 위치/크기 삽입)는 채택하지 않는다.
+
+1. **State — 텍스트 Page의 플랫 필드 2개.** `createTextPage`에
+   `backgroundMediaId: string | null`, `backgroundMediaType:
+   'image' | 'video' | null`을 추가한다. `backgroundMediaType`을
+   함께 저장하는 이유: `view/PageView.js`는 순수 동기 함수라
+   MediaStore(IndexedDB)를 조회할 수 없어, 배경이 이미지인지 영상인지를
+   Page가 스스로 알려줘야 img/video 레이어를 고를 수 있다. 이 필드들은
+   `Page.js`가 이미 `// Future: backgroundMediaId`로 예고해 둔 자리이며,
+   "Element 모델 전까지 플랫 필드로 버틴다"(TODO Page 모델 전환 항목)는
+   승인된 전략의 이행이다. **image/video Page에는 추가하지 않는다** —
+   그들은 콘텐츠 자체가 이미 화면을 채우는 배경이다.
+2. **변경 경로 — 기존 UPDATE_PAGE 재사용.** 배경 적용/제거는 전용 액션을
+   만들지 않고 `UPDATE_PAGE`(CommandBus 경유)로 Page를 통째로 교체한다.
+   기존 text/style 편집과 완전히 같은 경로다. 따라서 (a) Mutation은
+   기존 `SET_PAGES`를 그대로 타고(새 Mutation 불필요), (b) History는
+   UPDATE_PAGE의 Page 전체 스냅샷 inverse가 새 필드를 자동 복원하며,
+   (c) MediaStore는 건드리지 않는다 — 이미 업로드된 mediaId를 **참조만**
+   한다(image Page의 mediaId와 동일, D-027 경계 유지).
+3. **미디어 preload 확장.** `command/CommandBus.js`의 `preloadMedia()`가
+   `page.mediaId`뿐 아니라 `page.backgroundMediaId`도 MediaRuntimeCache에
+   채운다(D "Media Preload"의 mediaId 조회 메커니즘을 배경 id로 확장 —
+   MEDIA_COMMANDS whitelist는 그대로). 이로써 Preview/Output이 배경 blob을
+   동기 peek할 수 있다.
+4. **렌더 — 기존 미디어 레이어 재사용.** `createPageView(page, media,
+   backgroundMedia)`에 3번째 인자(배경 blob URL)를 추가한다. `media`는
+   여전히 Page 자신의 콘텐츠 미디어(image/video Page용)이고, text Page는
+   `media=null`·`backgroundMedia=배경 URL`이 된다. text 브랜치에서
+   배경 레이어(`backgroundMediaType`에 따라 기존 createImageLayer/
+   createVideoLayer 재사용)를 텍스트 레이어 **앞에** append해 텍스트가
+   위에 오게 한다(image/video Page의 오버레이와 동일한 DOM 순서).
+
+### 이유
+
+- **배경형 채택(자유 배치 기각)**: 이 앱의 실사용은 "가사 위 배경 영상/
+  이미지"(예배 송출 표준)다. 자유 배치는 Element 모델(Phase 2, 스키마
+  마이그레이션 포함 고비용, D-002/Page 모델 전환과 충돌)을 요구하는데,
+  실사용 가치의 대부분은 배경형으로 저비용에 달성된다. Element 모델
+  전환 트리거("한 Page에 독립 편집 콘텐츠 3개 이상")는 여전히 미충족.
+- **image Page+오버레이와의 중복 허용**: "텍스트+미디어"를 만드는 경로가
+  둘(미디어 Page+텍스트 오버레이 / 텍스트 Page+배경 미디어)이 되지만
+  의도적이다 — 워크플로우가 다르다. 특히 후자는 Song에서 생성된 가사
+  Page(text 타입, D-021)에 배경을 입힐 수 있어, 미디어 Page로 다시
+  만들면 끊기던 Song 연결을 유지한다. `type`은 콘텐츠의 "주체"를
+  나타내는 값으로 유지한다(text Page는 배경이 생겨도 여전히 type:'text').
+- **스키마 버전 미상향**: 순수 가법(additive) 옵셔널 필드다. 기존 저장
+  데이터는 필드가 없어(undefined→falsy) 배경이 안 그려질 뿐 정상 로드되고,
+  `sanitizePresentation()`이 Page를 `{...page}`로 통과시켜 새 필드를
+  보존한다(화이트리스트 아님). 마이그레이션 불필요.
+
+### Non-goal
+
+- **자유 배치(Element 모델, 인라인 위치/크기 지정)** — 위 이유 참조.
+  Element 모델 전환 트리거 충족 시 재검토.
+- **배경 fit(cover/contain) 옵션·backgroundColor 사용자 편집** — MVP는
+  기존 미디어 레이어의 `object-fit: contain` 고정을 그대로 재사용한다
+  (image/video Page와 동일한 범위 단순화). 배경 영상의 controls 노출도
+  기존 createVideoLayer 재사용에 따른 것으로, 별도 숨김 처리는 범위 밖.
+- **image/video Page에 배경 미디어** — 콘텐츠가 이미 배경이라 불필요.
+
+### 결과
+
+영향 파일: `domain/Page.js`(createTextPage 필드 2개 + isValidPage 방어),
+`domain/Page.test.js`(신규), `view/PageView.js`(3번째 인자 + 배경 레이어),
+`command/CommandBus.js`(preloadMedia가 backgroundMediaId도 조회),
+`command/CommandBus.test.js`(회귀), `ui/PreviewPanel.js`/`output.html`
+(backgroundMediaId 해석 → 3번째 인자 전달), `index.html`(라이브러리
+"배경으로 적용" + 사이드바 배경 표시/제거). 관련: `Research/Observations.md`
+2026-07-14 #3, D-002(Page 소유)/D-021(Song 재가져오기)/D-027(Media 분리)/
+Page 모델 전환 TODO(플랫 필드 stopgap 전략).
+

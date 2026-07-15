@@ -28,10 +28,11 @@
 /**
  * Page → HTMLElement
  * @param {object} page  - Page 도메인 객체
- * @param {string|null} media - blob URL 문자열 (image/video 타입일 때만 사용). text 타입에는 영향 없음.
+ * @param {string|null} media - blob URL 문자열 (image/video 타입의 콘텐츠 미디어). text 타입에는 영향 없음.
+ * @param {string|null} backgroundMedia - blob URL 문자열 (text Page의 배경 미디어, D-032). 다른 타입에는 영향 없음.
  * @returns {HTMLElement}
  */
-export function createPageView(page, media = null) {
+export function createPageView(page, media = null, backgroundMedia = null) {
   const slide = document.createElement('div')
   slide.className = 'slide'
   slide.dataset.pageId = page.id
@@ -40,6 +41,17 @@ export function createPageView(page, media = null) {
   applyBackground(slide, page)
 
   if (page.type === 'text') {
+    // 배경 미디어(D-032) — 텍스트 뒤에 깔린다. image/video Page의 오버레이와
+    // 대칭이며 DOM 순서도 동일하다: 미디어 레이어를 먼저 append해 텍스트가
+    // 위에 오게 한다. backgroundMediaId만 있고 blob(backgroundMedia)이 없으면
+    // (캐시 미스) 기존 미디어 레이어가 "미디어 없음" placeholder를 보여준다.
+    if (page.backgroundMediaId) {
+      slide.appendChild(
+        page.backgroundMediaType === 'video'
+          ? createVideoLayer(backgroundMedia)
+          : createImageLayer(backgroundMedia),
+      )
+    }
     slide.appendChild(createTextLayer(page))
   } else if (page.type === 'image') {
     slide.appendChild(createImageLayer(media))

@@ -173,8 +173,15 @@
       media = await resolveMedia(page.mediaId)
     }
 
+    // 배경 미디어(D-032) — text Page가 배경 blob을 가질 수 있다. mediaId와
+    // 동일하게 IndexedDB에서 resolve해 3번째 인자로 넘긴다.
+    let backgroundMedia = null
+    if (page.backgroundMediaId) {
+      backgroundMedia = await resolveMedia(page.backgroundMediaId)
+    }
+
     // resolve가 끝난 뒤에만 화면을 교체한다 — 그 전까지는 직전 화면 유지.
-    const newSlide = createPageView(page, media)
+    const newSlide = createPageView(page, media, backgroundMedia)
 
     // type이 'fade'이고 페이드해 들어올 대상(직전 슬라이드)이 실제로
     // 있을 때만 크로스페이드한다. 'none'/'cut'/미인식 값이거나 STANDBY

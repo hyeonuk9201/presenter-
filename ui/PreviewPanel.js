@@ -69,9 +69,10 @@ export function createPreviewPanel(containerEl) {
     // bootstrapMediaCache()를 호출해 미리 캐시를 채워둔다 — 그렇지
     // 않으면 여기서 캐시 미스가 난다(실사용 중 발견, 2026-06-27).
     const media = peekMediaCache(page.mediaId)
+    const backgroundMedia = page.backgroundMediaId ? peekMediaCache(page.backgroundMediaId) : null
 
     containerEl.innerHTML = ''
-    containerEl.appendChild(createPageView(page, media))
+    containerEl.appendChild(createPageView(page, media, backgroundMedia))
   }
 
   function showBlank() {

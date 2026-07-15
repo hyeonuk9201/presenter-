@@ -98,6 +98,34 @@ describe('CommandBus — media preload (D-019)', () => {
     assert.equal(hasMediaCached('m-bus-ghost'), false)
     assert.equal(peekMediaCache('m-bus-ghost'), null)
   })
+
+  // backgroundMediaId preload 회귀(D-032, 2026-07-15) — text Page의 배경 미디어도
+  // mediaId와 동일하게 캐시에 채워져야 Preview/Output이 동기 peek할 수 있다.
+  test('backgroundMediaId를 가진 text Page의 UPDATE_PAGE는 배경 blob을 캐시에 채운다', async () => {
+    await putMedia('m-bus-bg', new Blob(['bg-bytes'], { type: 'image/png' }))
+    const page = createTextPage({ text: 'bg', backgroundMediaId: 'm-bus-bg', backgroundMediaType: 'image' })
+    await execute({ type: 'ADD_PAGE', payload: { page } })
+    // UPDATE_PAGE로도 preload 경로(MEDIA_COMMANDS)를 타는지 확인
+    await execute({ type: 'UPDATE_PAGE', payload: { page } })
+
+    assert.ok(hasMediaCached('m-bus-bg'))
+    assert.equal(typeof peekMediaCache('m-bus-bg'), 'string')
+  })
+
+  test('mediaId와 backgroundMediaId가 둘 다 있으면 둘 다 채워진다', async () => {
+    await putMedia('m-bus-content', new Blob(['content'], { type: 'image/png' }))
+    await putMedia('m-bus-bg2', new Blob(['bg2'], { type: 'video/mp4' }))
+    // 두 참조를 동시에 가진 payload — Domain 생성 함수를 거치지 않고
+    // preloadMedia가 payload의 모양(page.mediaId + page.backgroundMediaId)만
+    // 본다는 점을 그대로 검증한다.
+    const page = { ...createImagePage({ mediaId: 'm-bus-content', label: 'both' }), backgroundMediaId: 'm-bus-bg2', backgroundMediaType: 'video' }
+    await execute({ type: 'ADD_PAGE', payload: { page } })
+
+    assert.ok(hasMediaCached('m-bus-content'))
+    assert.ok(hasMediaCached('m-bus-bg2'))
+    assert.equal(typeof peekMediaCache('m-bus-content'), 'string')
+    assert.equal(typeof peekMediaCache('m-bus-bg2'), 'string')
+  })
 })
 
 describe('CommandBus — bootstrapMediaCache (D-020)', () => {

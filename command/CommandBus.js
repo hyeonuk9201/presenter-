@@ -93,28 +93,33 @@ export function setHistoryHook(hook) {
 const MEDIA_COMMANDS = new Set(['ADD_PAGE', 'UPDATE_PAGE', 'INSERT_PAGE_AT'])
 
 /**
- * payload.page.mediaId가 있으면 MediaRuntimeCache를 채운다.
- * 이미 캐시에 있으면 IndexedDB를 다시 읽지 않는다(hasMediaCached 확인).
+ * payload.page의 미디어 참조(mediaId, backgroundMediaId)를 MediaRuntimeCache에
+ * 채운다. 이미 캐시에 있으면 IndexedDB를 다시 읽지 않는다(hasMediaCached 확인).
  *
  * CommandBus는 원칙적으로 Domain 구조를 모르지만, 이 함수는 "payload에
- * page.mediaId 필드가 있는가"라는 최소한의 모양만 본다 — Page의 나머지
- * 구조(text/fontSize 등)는 전혀 참조하지 않는다.
+ * page.mediaId / page.backgroundMediaId 필드가 있는가"라는 최소한의 모양만
+ * 본다 — Page의 나머지 구조(text/fontSize 등)는 전혀 참조하지 않는다.
+ *
+ * backgroundMediaId(D-032, 2026-07-15): text Page가 배경 미디어를 가질 수 있어,
+ * 콘텐츠 미디어(mediaId)와 동일한 preload 대상이다. 둘은 서로 다른 id라
+ * 병렬로 조회한다.
  *
  * @param {object} payload
  */
 async function preloadMedia(payload) {
-  const mediaId = payload?.page?.mediaId
-  if (!mediaId) return // 텍스트 Page 등 media가 없는 경우 — 아무 일도 하지 않는다
+  await Promise.all([
+    preloadMediaId(payload?.page?.mediaId),
+    preloadMediaId(payload?.page?.backgroundMediaId),
+  ])
+}
+
+async function preloadMediaId(mediaId) {
+  if (!mediaId) return // 미디어 없는 경우(텍스트 전용 Page, 배경 없는 Page) — 아무 일도 하지 않는다
 
   if (hasMediaCached(mediaId)) return // 이미 채워져 있으면 재조회하지 않는다
 
   const record = await getMedia(mediaId)
   if (!record) {
-    // IndexedDB에 없는 mediaId — 파일이 삭제됐거나 다른 환경에서 만든
-    // 데이터일 수 있다. 여기서 throw하면 dispatch 자체가 막혀 Page
-    // 추가/수정이 완전히 실패하므로, 조용히 넘어간다(View 쪽에서
-    // peek()가 null을 받아 깨진 미디어 표시를 하는 것으로 충분하다 —
-    // 다음 단계인 PageView.js 작업에서 다룬다).
     console.warn('[CommandBus] mediaId에 해당하는 레코드를 찾을 수 없음:', mediaId)
     return
   }

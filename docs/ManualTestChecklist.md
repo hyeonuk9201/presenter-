@@ -10,7 +10,7 @@
 > 한 줄 남긴다. 오래돼서 더 이상 유효하지 않으면(이후 세션에서 그 위에
 > 기능이 문제없이 쌓여 사실상 검증된 경우 등) 이유와 함께 삭제한다.
 >
-> 최종 업데이트: 2026-07-15 (Output 창 자동 배치 폴백 경로 E2E 검증 완료)
+> 최종 업데이트: 2026-07-15 (텍스트 Page 배경 미디어 D-032 E2E 검증 완료)
 
 ---
 
@@ -26,6 +26,14 @@
 
 ## 확인 완료
 
+- [x] **텍스트 Page 배경 미디어 (D-032)** — 2026-07-15
+  Playwright(Chromium) 자동화로 검증, 체크 9건 전부 통과 + JS 에러 0건.
+  텍스트 Page 선택 후 라이브러리 "배경으로 적용" → Preview 슬라이드에
+  배경 media-layer + text-layer 동시 렌더(배경 img src=blob URL 확인),
+  사이드바 배경 row 표시/status "배경"/제거 버튼 노출, 운영 모드
+  GO_LIVE 시 output.html에도 배경+텍스트 렌더, "배경 제거" 클릭 시
+  Preview media-layer 사라지고 status "없음". e2e-verify 스킬 템플릿
+  사용, 스크립트 검증 후 삭제.
 - [x] **Output 창 자동 배치 — 폴백 경로 (P3, Window Management API)** — 2026-07-15
   Playwright(Chromium, 단일 화면·권한 없음 = 폴백 경로) 자동화로 검증,
   체크 5건 전부 통과 + JS 에러 0건. Output 버튼 클릭 시 팝업(output.html)
