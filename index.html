@@ -1293,9 +1293,31 @@
   const outputBtn = document.getElementById('output-btn')
   let outputWindow = null
 
+  // Output 창을 부 모니터에 자동 배치한다 (Window Management API).
+  // 설계 이유: window.open은 사용자 제스처(클릭) 안에서만 허용되고,
+  // getScreenDetails()는 권한 프롬프트로 그 제스처를 소모할 수 있다. 그래서
+  // 창은 제스처 안에서 "먼저" 열고(→ 기존 고정 1280x720 팝업이 항상 보장되는
+  // 폴백), 화면 정보는 그 뒤에 best-effort로 조회해 부 모니터로 옮긴다.
+  // 미지원/권한 거부/단일 모니터면 아무 것도 하지 않아 기존 창 그대로 남는다
+  // (무손상 폴백). 범위는 "어느 모니터에 배치하느냐"까지만 — 개별 소스 라우팅
+  // (main/bus)이나 Fullscreen API는 별개 항목이라 여기 포함하지 않는다.
+  async function placeOnSecondaryScreen(win) {
+    if (!win || !('getScreenDetails' in window)) return
+    try {
+      const details = await window.getScreenDetails() // 최초 호출 시 권한 프롬프트
+      const secondary = details.screens.find(s => !s.isPrimary)
+      if (!secondary) return // 단일 모니터 → 기존 창 유지
+      win.moveTo(secondary.availLeft, secondary.availTop)
+      win.resizeTo(secondary.availWidth, secondary.availHeight)
+    } catch {
+      // 권한 거부/미지원 → 폴백(기존 고정 창을 그대로 둔다)
+    }
+  }
+
   outputBtn.addEventListener('click', () => {
     if (!outputWindow || outputWindow.closed) {
       outputWindow = window.open('./output.html', 'tc-presenter-output', 'width=1280,height=720')
+      placeOnSecondaryScreen(outputWindow) // best-effort, 실패해도 창은 이미 열려 있음
       outputBtn.textContent = ''
       const dot = document.createElement('span')
       dot.className = 'dot'
