@@ -39,6 +39,33 @@
 - 도메인 파일(domain/*)은 DOM/Store/렌더링을 알지 못한다.
 - 새 설계 결정은 docs/Decisions.md에 D-NNN으로 기록한 뒤 구현한다.
 
+## 코드 구조 (큰 그림)
+두 개의 브라우저 창이 `BroadcastChannel('tc-presenter-output')`으로 연결된 구조다.
+- **index.html = 편집/조작 창(Presenter).** 여기서만 상태를 바꾼다. 임베디드 스크립트가 모든 모듈을 조립한다(진입점).
+- **output.html = 송출 창(Projector).** 상태를 소유하지 않는다. 채널로 받은 Live Page만 `view/PageView.js`로 렌더한다. 뒤늦게 열려도 `REQUEST_SYNC`를 보내 현재 Live를 되받는다(BroadcastOutput.js 헤더 참조).
+
+편집 창 내부 데이터 흐름(단방향):
+```
+UI(index.html, ui/CueList.js, ui/PreviewPanel.js)
+  → command/CommandBus.execute({type,payload})   ← 유일한 쓰기 진입점
+      → (media Command면 dispatch 전 MediaRuntimeCache preload)
+      → store/AppStore.dispatch()                 ← reducer, SSOT
+      → registerSubscriber() 대상들에게 Mutation 통지
+           ├ PersistenceSubscriber → StorageAdapter(localStorage 저장)
+           ├ BroadcastOutput → 채널로 Live Page 전송 → output.html
+           └ UI 구독자 재렌더
+      → CommandBus의 HistoryHook.afterExecute → HistoryManager(undo/redo)
+```
+
+레이어 경계(안쪽일수록 아무것도 모른다):
+- `domain/*` — 순수 데이터/함수. DOM·Store·렌더링 모름. (Presentation=Page 순서, PresenterState=선택/Live/모드, Page/Section/Song/StylePreset)
+- `store/AppStore.js` — 상태 SSOT. `dispatch()`로만 변경, Mutation은 reduce 전후 state 비교로 도출(reducer 무수정).
+- `command/`, `history/`, `persistence/` — 각각 쓰기 진입점 / Undo / 저장. AppStore는 이들의 존재를 모른다(Subscriber로 스스로 등록).
+- `store/SongStore.js`·`AppSettingsStore.js`·`media/MediaStore.js` — **별도 저장소(D-027).** CommandBus/History/AppStore 흐름 밖. localStorage/IndexedDB에 직접 저장하고 Undo 대상 아님.
+- `ui/*`, `view/*`, `output/*` — 렌더링/입출력.
+
+주의: `docs/*Architecture.md`와 `Vocabulary.md`는 다수가 Phase 2 목표(Element 모델, elementMap SSOT)를 서술한다. 현재 코드는 Page가 text/style를 직접 보유하는 이전 단계다 — 코드와 다르면 CurrentState.md가 최종 근거(D-029, DocumentationHierarchy.md).
+
 ## 검증 (D-028)
 - domain/store/persistence/command/history 변경 시: 같은 폴더에 *.test.js를 추가/갱신하고 `node --test` 전체 통과(fail 0)를 확인한다. 테스트 개수는 세션마다 늘어나므로 특정 숫자를 기준으로 삼지 않는다. 테스트 없는 기능/버그 수정은 미완료다.
 - ui/*.js, index.html/output.html embedded script 변경 시: Playwright 임시 E2E 스크립트로 검증 → 스크립트 삭제 → docs/ManualTestChecklist.md에 결과 한 줄 기록.
