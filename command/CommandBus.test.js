@@ -99,6 +99,31 @@ describe('CommandBus — media preload (D-019)', () => {
     assert.equal(peekMediaCache('m-bus-ghost'), null)
   })
 
+  // TD-2 회귀(감사 2026-07-11) — IndexedDB 조회 자체가 reject하는 경우.
+  // 이전에는 preload reject가 execute() 반환 Promise로 그대로 전파돼,
+  // fire-and-forget 호출부에서 unhandled rejection + dispatch 미실행이 됐고
+  // Undo 주입 INSERT_PAGE_AT이면 pop된 이력이 유실됐다. 지금은 "레코드
+  // 없음"과 동일하게 warn 후 진행해야 한다. fake-indexeddb의
+  // IDBDatabase.prototype.transaction을 일시적으로 throw시켜 조회 실패를
+  // 재현한다(DB가 닫힌 InvalidStateError류 실제 실패와 같은 지점).
+  test('IndexedDB 조회가 reject해도 — execute()는 resolve하고 dispatch는 진행되며 캐시만 비어 있다', async () => {
+    const page = createImagePage({ mediaId: 'm-bus-broken', label: 'idb-fail' })
+    const originalTransaction = globalThis.IDBDatabase.prototype.transaction
+    globalThis.IDBDatabase.prototype.transaction = () => {
+      throw new Error('TD-2: 의도적 IndexedDB 조회 실패')
+    }
+    try {
+      // reject 없이 resolve해야 한다 — reject하면 이 await가 throw해서 테스트가 실패한다
+      await execute({ type: 'ADD_PAGE', payload: { page } })
+    } finally {
+      globalThis.IDBDatabase.prototype.transaction = originalTransaction
+    }
+
+    assert.notEqual(pageIndex(page.id), -1) // preload 실패에도 dispatch는 진행
+    assert.equal(hasMediaCached('m-bus-broken'), false) // 캐시 미기록
+    assert.equal(peekMediaCache('m-bus-broken'), null)
+  })
+
   // backgroundMediaId preload 회귀(D-032, 2026-07-15) — text Page의 배경 미디어도
   // mediaId와 동일하게 캐시에 채워져야 Preview/Output이 동기 peek할 수 있다.
   test('backgroundMediaId를 가진 text Page의 UPDATE_PAGE는 배경 blob을 캐시에 채운다', async () => {

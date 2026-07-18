@@ -2973,3 +2973,74 @@ A를 착수 지정**. Page.js/PageView.js가 이미 `// Future: backgroundMediaI
    "text+미디어"를 만드는 경로가 둘(미디어 Page+오버레이 / text Page+배경)이
    된 건 의도된 중복 — 후자는 Song 가사 Page(text)에 배경을 입혀 Song
    연결을 유지하는 워크플로우다(D-032 이유 참조).
+
+---
+
+## 9-55. 탐색 후보 등록 + TD-2 미처리 rejection 안전망 (2026-07-18)
+
+### 배경
+
+2026-07-16 탐색 세션(읽기 전용, 세션 기록 없음 — 결과는 대화로만 보고)이
+승격 후보 6건을 발굴했다: ① MediaRuntimeCache blob URL 미축출 누수(코드로
+확정 — `evict()` 호출부 0곳), ② TD-2 미처리 rejection 안전망, ③ Reflow,
+④ Output 자동 전체화면, ⑤ Media IndexedDB GC, ⑥ Session 모델 통합(D-014).
+사용자 지시(2026-07-18): 후보를 TODO 7필드로 등록하고, Decision 선행 없이
+착수 가능한 것부터 구현. Decision/에스컬레이션 항목은 등록만.
+
+triage 결과: ①은 evict 시점이 D-019 GC-Phase2 보류 경계에 걸려 **등록만**
+(P3, Architecture TODO). ②는 감사 문서가 D-0XX 충돌 없음을 확인한 유일한
+즉시 착수 후보라 **등록 + 구현**. ③~⑥은 기존 문서의 보류/트리거 기록이
+이미 커버해 미등록(③ Reflow는 Observations 0705 + splitLyrics 기반 성숙
+기록, ④는 9-53 범위 제외 명시, ⑤는 MediaStore 헤더 Phase 2 보류, ⑥은
+D-014 자체가 기록).
+
+### 구현 (TD-2)
+
+- **command/CommandBus.js**: `preloadMediaId()`의 `await getMedia(mediaId)`를
+  try/catch — IndexedDB 조회 자체가 reject하는 경우(권한/디스크/DB 닫힘)를
+  기존 "레코드 없음"과 동일하게 warn 후 return(캐시 미기록, dispatch 진행).
+  이유: reject를 흘려보내면 fire-and-forget 호출부에서 unhandled rejection이
+  되고, Undo가 주입한 INSERT_PAGE_AT이면 이미 pop된 이력이 유실된다(감사
+  TD-2 부수 경로). 캐시가 비면 View가 placeholder를 렌더하므로 dispatch를
+  막을 이유가 없다. 실행 큐 주석의 "에러는 호출자에게 전파" 서술에 preload
+  예외를 명시(주석 정정).
+- **index.html**: showToast 정의 직후 전역 `unhandledrejection` 핸들러 —
+  `console.error('[UnhandledRejection]', e.reason)` + 토스트 "작업 처리 중
+  오류가 발생했습니다 — 콘솔을 확인해주세요." 개별 호출부를 감싸는 대신
+  최후 방어선 하나. `e.preventDefault()`는 호출하지 않음(브라우저 기본
+  콘솔 출력 유지 — 원본 스택이 남는 편이 디버깅에 유리). **output.html에는
+  넣지 않았다** — 송출 화면에 UI 노출 금지.
+
+작업 방식: 오케스트레이션 모드 — 구현·테스트·E2E는 실행 에이전트에 위임
+(architecture-review/fnr-patch/e2e-verify 스킬 적용 지시), 오케스트레이터가
+범위 확정·diff 검토·`node --test` 재실행 검증·문서/커밋 수행.
+
+### 변경 파일
+
+- `command/CommandBus.js`, `command/CommandBus.test.js`(회귀 1건)
+- `index.html`
+- `docs/TODO.md`(후보 2건 등록 — 별도 docs 커밋 `94fae41` + 완료 처리),
+  `docs/CurrentState.md`, `docs/ManualTestChecklist.md`
+
+### 검증
+
+- `node --test` 전체 **143/143**(fail 0). 신규: "IndexedDB 조회가 reject해도
+  execute()는 resolve하고 dispatch는 진행되며 캐시만 비어 있다" —
+  fake-indexeddb의 `IDBDatabase.prototype.transaction`을 일시 패치(finally
+  복원)해 조회 실패를 실제 재현(mock 주입점 없이 기존 테스트 패턴 유지).
+- Playwright E2E 2건(e2e-verify 임시 스크립트, 검증 후 삭제): 부팅+평상
+  플로우 JS 에러 0건(의도적 트리거 이전 구간), `page.evaluate`로
+  `Promise.reject` 발생 시 `#toast.is-visible` + 문구 확인(의도적 rejection의
+  pageerror/콘솔 로그는 허용 목록 처리).
+
+### 다음 단계 진입 시 주의사항
+
+1. **blob URL 누수(①)는 등록만 된 상태다** — `evict()` 호출을 붙이려면
+   "언제 축출해도 Live/Preview가 깨지지 않는가"에 대한 소규모 Decision이
+   선행돼야 한다(TODO Architecture 절 참조). 임의 착수 금지.
+2. preload 실패 시 dispatch가 진행되므로, **"미디어를 찾을 수 없음"
+   placeholder가 뜨는 경로가 하나 늘었다**(레코드 없음 + 조회 실패). 실사용
+   중 placeholder 보고가 오면 콘솔의 warn 문구로 두 경우를 구분할 것.
+3. 전역 unhandledrejection 핸들러는 **최후 방어선이지 오류 처리 정책이
+   아니다** — 특정 경로의 오류를 사용자 친화적으로 다루려면 그 호출부에서
+   개별 처리하고, 이 핸들러에 분기를 쌓지 말 것.

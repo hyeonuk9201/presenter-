@@ -118,7 +118,19 @@ async function preloadMediaId(mediaId) {
 
   if (hasMediaCached(mediaId)) return // 이미 채워져 있으면 재조회하지 않는다
 
-  const record = await getMedia(mediaId)
+  // TD-2(감사 2026-07-11): IndexedDB 조회 자체가 실패(reject)하는 경우도
+  // "레코드 없음"과 동일하게 warn 후 계속 진행한다. 여기서 reject를 그대로
+  // 흘려보내면 fire-and-forget 호출부(index.html, ui/CueList.js)에서
+  // unhandled rejection이 되고, Undo가 주입한 INSERT_PAGE_AT이면 이미 pop된
+  // 이력이 유실된다. 캐시가 비어 있으면 View가 placeholder를 렌더하므로
+  // (레코드 없음 경로와 동일) dispatch를 막을 이유가 없다.
+  let record
+  try {
+    record = await getMedia(mediaId)
+  } catch (err) {
+    console.warn('[CommandBus] media 조회 실패 — 캐시를 채우지 않고 Command는 계속 진행:', mediaId, err)
+    return
+  }
   if (!record) {
     console.warn('[CommandBus] mediaId에 해당하는 레코드를 찾을 수 없음:', mediaId)
     return
@@ -169,7 +181,9 @@ export async function bootstrapMediaCache(pages) {
  * 던지더라도(현재는 없음, 방어적으로) 다음 Command가 영원히 막히면 안
  * 되므로 .catch(() => {})로 큐 체인 자체는 항상 살아있게 한다. 실제
  * Command 처리 중 에러는 각 executeInternal 호출의 반환 Promise를 통해
- * 그대로 호출자에게 전파된다(아래 execute() 참조).
+ * 그대로 호출자에게 전파된다(아래 execute() 참조). 단, media preload
+ * 실패는 예외다 — preloadMediaId 내부에서 warn 처리하고 전파하지 않는다
+ * (TD-2, preloadMediaId 주석 참조).
  */
 let queue = Promise.resolve()
 

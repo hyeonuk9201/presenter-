@@ -1083,6 +1083,16 @@
     toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2200)
   }
 
+  // ── 전역 미처리 rejection 안전망 (TD-2, 감사 2026-07-11) ──
+  // execute()/undo()/redo() 호출부는 전부 fire-and-forget이라, 어떤 경로든
+  // reject가 새어 나오면 아무도 잡지 못하고 조용히 실패한다. 개별 호출부를
+  // 전부 감싸는 대신 최후 방어선 하나로 사용자에게 노출한다(토스트 + 콘솔).
+  // output.html에는 넣지 않는다 — 송출 화면에 UI를 띄우면 안 된다.
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error('[UnhandledRejection]', e.reason)
+    showToast('작업 처리 중 오류가 발생했습니다 — 콘솔을 확인해주세요.')
+  })
+
   // Step6(2026-06-27, 실사용 버그 수정 → GPT 리뷰로 구조 개선):
   // localStorage에서 복원된 Page(AppStore.js 모듈 로드 시점에 이미
   // state.presentation.pages로 들어가 있음 — CommandBus.execute()를 거치지
