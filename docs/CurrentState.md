@@ -3044,3 +3044,60 @@ D-014 자체가 기록).
 3. 전역 unhandledrejection 핸들러는 **최후 방어선이지 오류 처리 정책이
    아니다** — 특정 경로의 오류를 사용자 친화적으로 다루려면 그 호출부에서
    개별 처리하고, 이 핸들러에 분기를 쌓지 말 것.
+
+---
+
+## 9-56. blob 누수 evict 시점 Decision 초안 작성 (2026-07-19, 문서만)
+
+### 배경
+
+9-55에서 등록만 하고 보류한 "MediaRuntimeCache blob URL 미축출 누수"
+(P3, evict 시점 Decision 선행)의 그 Decision을 사용자 지시로 설계.
+**구현·채택 금지** 지시에 따라 코드 무변경, Decisions.md 미등재 —
+Research 초안(강제력 없음)으로만 작성.
+
+작업 방식: 오케스트레이터가 코드 컨텍스트 수집(MediaRuntimeCache 전체,
+사용처 지도, output.html resolveMedia, AppStore 구독 메커니즘) 후
+deep-reasoner에 설계 분석 위임(대안 5종 평가, computeInverse 전수 확인,
+함정 6종 판정) → 검토 후 초안 작성.
+
+### 확인 내용 (초안 요지)
+
+- **권고안**: 참조 기반 sweep — `domain/Presentation.js`에
+  `collectReferencedMediaIds()` 순수 함수(mediaId+backgroundMediaId),
+  `MediaRuntimeCache.sweep(keepSet)` 신설, CommandBus의 dispatch 직후
+  `prevState.pages !== nextState.pages`일 때만 호출. 액션 whitelist가
+  아니라 pages 참조 비교라 D-020류 "whitelist 누락" 함정을 구조적으로
+  회피.
+- **핵심 불변식**: state.pages 미참조 id만 축출 → Preview(selected/
+  live Page = state의 원소)가 그리는 id는 구조적으로 보존. output.html은
+  별도 realm/캐시라 메인 탭 sweep이 송출에 도달 불가.
+- **undo 정합성 전수 확인**: 참조가 사라지는 명령은 REMOVE_PAGE·
+  UPDATE_PAGE(mediaId 교체)뿐, 두 inverse 모두 MEDIA_COMMANDS라 재preload
+  로 복원. 근거는 whitelist가 아니라 "IndexedDB 영속 + Page 재도입
+  경로는 전부 MEDIA_COMMANDS".
+- **기각**: 액션별 국소 evict(whitelist 함정 재현), 전용 Subscriber
+  (단일 쓰기 지점 원칙 개정 필요), LRU(과설계), 현상 유지(누수 확정).
+- **Non-goal**: output.html 자체 캐시(크로스페이드 revoke 타이밍 위험,
+  별도 후속 Decision), IndexedDB 영속 GC, 썸네일 objectURL, LRU, 축출 UX.
+- **알려진 한계**: bootstrapMediaCache(큐 밖)와의 부팅 직후 레이스 —
+  미참조 항목 1개가 다음 sweep까지 잔존할 수 있으나 무해·자가 치유.
+- 검증 계획(회귀 9건 + E2E)까지 초안에 포함 — 구현 세션이 그대로 쓸 수
+  있게 구체화.
+
+### 변경 파일
+
+- `docs/Research/2026-07-19 MediaRuntimeCache Evict Decision Draft.md`(신규)
+- `docs/TODO.md`(해당 항목 Dependency에 초안 링크, 헤더), `docs/CurrentState.md`
+- 코드 무변경(테스트 결과 불변 — 9-55의 143/143 그대로)
+
+### 다음 단계 진입 시 주의사항
+
+1. **이 초안은 Research다 — 구현 근거로 쓰지 말 것.** 사용자 승인 →
+   Decisions.md D-0XX 등재 후에만 착수(D-029). 등재 시 TODO 항목의
+   Dependency가 충족된다.
+2. 채택 시 keepSet에 **backgroundMediaId 포함이 필수**(D-032 대칭) —
+   초안 검증 계획 3번이 이를 고정하는 필수 가드다.
+3. output.html 캐시 누수는 이 초안이 다루지 않는다(Non-goal 1) — 별도
+   후속 Decision 없이 sweep을 output에 이식하지 말 것(크로스페이드
+   previousSlide가 구 URL을 쓰는 구간에 revoke하면 송출이 깨진다).
