@@ -1,10 +1,9 @@
 # [Draft] MediaRuntimeCache 축출(evict) 시점 Decision 초안
 
-> **Status: Draft — 채택되지 않았다. 구현 근거로 쓰지 않는다.**
-> 이 문서는 `docs/Decisions.md` 형식을 따르는 **탐구/초안**이다. 사용자
-> 승인 시 D-0XX 번호를 받아 Decisions.md로 옮기고, 그 전까지는
-> Research 문서(강제력 없음, TODO.md "Decision과 Research를 구분하는
-> 기준" 참조)로만 존재한다.
+> **Status: 채택됨(2026-07-23) — `.itda/decisions.md` D-0001로 등재.**
+> ITDA 전환(2026-07-23)으로 Decisions.md(동결 아카이브)가 아니라
+> `.itda/decisions.md`에 4자리 번호(D-0001)로 등재됐다. 이 파일은
+> 설계 근거(대안 비교·정합성 논증·검증 계획)의 원문으로 유지한다.
 >
 > 배경: TODO.md Architecture 항목 "MediaRuntimeCache blob URL 미축출 —
 > evict() 호출부 0곳"(2026-07-18 등록, 2026-07-16 탐색에서 코드로 확정).
