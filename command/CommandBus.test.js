@@ -21,6 +21,7 @@ import { getState } from '../store/AppStore.js'
 import { put as putMedia } from '../media/MediaStore.js'
 import { has as hasMediaCached, peek as peekMediaCache } from '../media/MediaRuntimeCache.js'
 import { createTextPage, createImagePage } from '../domain/Page.js'
+import { HistoryHook, undo } from '../history/HistoryManager.js'
 
 function pageIndex(id) {
   return getState().presentation.pages.findIndex(p => p.id === id)
@@ -171,5 +172,160 @@ describe('CommandBus — bootstrapMediaCache (D-020)', () => {
     await bootstrapMediaCache(null)
     await bootstrapMediaCache(undefined)
     // throw만 없으면 통과 — 부팅 경로(initUI)에서 호출되므로 어떤 입력에도 죽으면 안 된다
+  })
+})
+
+describe('CommandBus — 참조 기반 sweep (D-0001)', () => {
+  // 통합 시나리오 — 초안 문서 "검증 계획"(docs/Research/2026-07-19
+  // MediaRuntimeCache Evict Decision Draft.md)을 그대로 옮겼다. sweep의
+  // 단위 동작(revoke 실호출 등)은 media/MediaRuntimeCache.test.js가,
+  // keepSet 계산은 domain/Presentation.test.js가 담당한다.
+  //
+  // 캐시/AppStore는 모듈 싱글톤이라 이 파일의 앞 describe들이 남긴 Page가
+  // state에 남아 있다 — 그 Page들이 참조하는 id는 sweep에서 항상 유지되므로
+  // 간섭이 없고, 각 테스트는 자신만의 mediaId를 쓰고 자신이 추가한 Page를
+  // REMOVE_PAGE로 정리해(그 자체가 "유일 참조 제거 → 축출" 검증이기도 하다)
+  // 다음 테스트에 영향을 주지 않는다.
+
+  test('미참조 축출 — pages 변경 명령 후 state가 참조하지 않는 항목만 사라진다', async () => {
+    await putMedia('m-swp-x', new Blob(['x'], { type: 'image/png' }))
+    await putMedia('m-swp-y', new Blob(['y'], { type: 'image/png' }))
+    // bootstrap 경로로 dispatch 없이 X·Y를 캐시에만 채운다(둘 다 아직 미참조)
+    await bootstrapMediaCache([
+      createImagePage({ mediaId: 'm-swp-x', label: 'x' }),
+      createImagePage({ mediaId: 'm-swp-y', label: 'y' }),
+    ])
+    assert.ok(hasMediaCached('m-swp-x') && hasMediaCached('m-swp-y'))
+
+    const pageX = createImagePage({ mediaId: 'm-swp-x', label: 'keep-x' })
+    await execute({ type: 'ADD_PAGE', payload: { page: pageX } }) // pages 변경 → sweep
+
+    assert.equal(typeof peekMediaCache('m-swp-x'), 'string') // state가 참조 → 유지
+    assert.equal(peekMediaCache('m-swp-y'), null)            // 미참조 → 축출
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: pageX.id } }) // 정리
+    assert.equal(peekMediaCache('m-swp-x'), null) // 유일 참조 제거 → 축출
+  })
+
+  test('공유 id 보존 — 두 Page가 같은 mediaId를 공유하면 하나를 지워도 유지된다', async () => {
+    await putMedia('m-swp-shared', new Blob(['s'], { type: 'image/png' }))
+    const p1 = createImagePage({ mediaId: 'm-swp-shared', label: 'p1' })
+    const p2 = createImagePage({ mediaId: 'm-swp-shared', label: 'p2' })
+    await execute({ type: 'ADD_PAGE', payload: { page: p1 } })
+    await execute({ type: 'ADD_PAGE', payload: { page: p2 } })
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: p1.id } })
+    assert.equal(typeof peekMediaCache('m-swp-shared'), 'string') // p2가 여전히 참조
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: p2.id } })
+    assert.equal(peekMediaCache('m-swp-shared'), null) // 마지막 참조 제거 → 축출
+  })
+
+  test('backgroundMediaId 보존/축출(D-032) — 배경 참조도 keepSet에 포함된다', async () => {
+    await putMedia('m-swp-bg', new Blob(['bg'], { type: 'image/png' }))
+    const bgPage = createTextPage({ text: 'bg-keep', backgroundMediaId: 'm-swp-bg', backgroundMediaType: 'image' })
+    const unrelated = createTextPage({ text: '무관한 텍스트' })
+    await execute({ type: 'ADD_PAGE', payload: { page: bgPage } })
+
+    await execute({ type: 'ADD_PAGE', payload: { page: unrelated } }) // 무관한 pages 변경
+    assert.equal(typeof peekMediaCache('m-swp-bg'), 'string') // 배경 참조 유지 (keepSet이 배경을 빼먹으면 여기서 실패)
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: bgPage.id } })
+    assert.equal(peekMediaCache('m-swp-bg'), null) // 배경의 유일 참조 제거 → 축출
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: unrelated.id } }) // 정리
+  })
+
+  test('Live/Preview 참조 보존 — live+selected Page의 media는 다른 Page 편집에도 축출되지 않는다', async () => {
+    await putMedia('m-swp-live', new Blob(['live'], { type: 'image/png' }))
+    const livePage = createImagePage({ mediaId: 'm-swp-live', label: 'live' })
+    const other = createTextPage({ text: 'other' })
+    await execute({ type: 'ADD_PAGE', payload: { page: livePage } })
+    await execute({ type: 'ADD_PAGE', payload: { page: other } })
+    await execute({ type: 'SELECT_PAGE', payload: { pageId: livePage.id } })
+    await execute({ type: 'GO_LIVE', payload: { pageId: livePage.id } })
+
+    await execute({ type: 'UPDATE_PAGE', payload: { page: { ...other, text: 'other-수정' } } }) // pages 변경 → sweep
+    assert.equal(typeof peekMediaCache('m-swp-live'), 'string') // live+selected Page의 media 유지
+
+    await execute({ type: 'CLEAR_LIVE' })
+    await execute({ type: 'CLEAR_SELECTION' })
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: livePage.id } }) // 정리
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: other.id } })
+  })
+
+  test('비-pages 명령은 sweep을 생략한다 — SELECT/GO_LIVE 후에도 미참조 항목이 잔존한다', async () => {
+    const anchor = createTextPage({ text: 'anchor' })
+    await execute({ type: 'ADD_PAGE', payload: { page: anchor } }) // pages 변경을 먼저 끝내둔다
+    await putMedia('m-swp-idle', new Blob(['idle'], { type: 'image/png' }))
+    await bootstrapMediaCache([createImagePage({ mediaId: 'm-swp-idle', label: 'idle' })]) // 미참조로 캐시에만 존재
+
+    await execute({ type: 'SELECT_PAGE', payload: { pageId: anchor.id } })
+    await execute({ type: 'GO_LIVE', payload: { pageId: anchor.id } })
+    assert.ok(hasMediaCached('m-swp-idle')) // 비-pages 명령 — sweep 생략, 잔존
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: anchor.id } }) // pages 변경 명령
+    assert.equal(peekMediaCache('m-swp-idle'), null) // 이제서야 축출
+  })
+
+  test('undo 재preload — REMOVE로 축출된 media가 undo(INSERT_PAGE_AT)에서 다시 채워진다', async () => {
+    await putMedia('m-swp-undo', new Blob(['undo'], { type: 'image/png' }))
+    const page = createImagePage({ mediaId: 'm-swp-undo', label: 'undoable' })
+    setHistoryHook(HistoryHook)
+    try {
+      await execute({ type: 'ADD_PAGE', payload: { page } })
+      await execute({ type: 'REMOVE_PAGE', payload: { pageId: page.id } })
+      assert.equal(peekMediaCache('m-swp-undo'), null) // 유일 참조 제거 → 축출
+
+      await undo(execute) // inverse = INSERT_PAGE_AT — MEDIA_COMMANDS 경유 재preload
+    } finally {
+      setHistoryHook(null) // 다른 테스트에 영향 주지 않도록 해제
+    }
+    assert.notEqual(pageIndex(page.id), -1) // Page 복원
+    assert.equal(typeof peekMediaCache('m-swp-undo'), 'string') // IndexedDB에서 재충전
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: page.id } }) // 정리(Hook 해제 후라 기록 안 됨)
+  })
+
+  test('UPDATE_PAGE mediaId 교체 — 새 id 충전·옛 id 축출, undo로 원상 복원', async () => {
+    await putMedia('m-swp-old', new Blob(['old'], { type: 'image/png' }))
+    await putMedia('m-swp-new', new Blob(['new'], { type: 'image/png' }))
+    const page = createImagePage({ mediaId: 'm-swp-old', label: 'swap' })
+    setHistoryHook(HistoryHook)
+    try {
+      await execute({ type: 'ADD_PAGE', payload: { page } })
+      await execute({ type: 'UPDATE_PAGE', payload: { page: { ...page, mediaId: 'm-swp-new' } } })
+      assert.equal(typeof peekMediaCache('m-swp-new'), 'string') // 새 참조 충전(preload)
+      assert.equal(peekMediaCache('m-swp-old'), null)            // 옛 참조 축출(sweep)
+
+      await undo(execute) // inverse = UPDATE_PAGE(before) — 역시 MEDIA_COMMANDS 경유
+      assert.equal(typeof peekMediaCache('m-swp-old'), 'string') // 재충전
+      assert.equal(peekMediaCache('m-swp-new'), null)            // 이번엔 new가 미참조 → 축출
+    } finally {
+      setHistoryHook(null)
+    }
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: page.id } }) // 정리
+  })
+
+  test('D-019 회귀 — fire-and-forget 연속 호출에도 순서 보존 + 종료 후 캐시가 참조 집합과 일치한다', async () => {
+    await putMedia('m-swp-seq', new Blob(['seq'], { type: 'image/png' }))
+    await putMedia('m-swp-stale', new Blob(['stale'], { type: 'image/png' }))
+    // 미참조 찌꺼기를 캐시에 심어둔다 — 연쇄 실행이 끝나면 정리돼 있어야 한다
+    await bootstrapMediaCache([createImagePage({ mediaId: 'm-swp-stale', label: 'stale' })])
+    const imagePage = createImagePage({ mediaId: 'm-swp-seq', label: 'seq-first' })
+    const textPage = createTextPage({ text: 'seq-second' })
+
+    // await 없이 연속 호출 — D-019 "순서 역전" 시나리오에 sweep이 얹힌 형태
+    const p1 = execute({ type: 'ADD_PAGE', payload: { page: imagePage } })
+    const p2 = execute({ type: 'ADD_PAGE', payload: { page: textPage } })
+    await Promise.all([p1, p2])
+
+    assert.ok(pageIndex(imagePage.id) < pageIndex(textPage.id),
+      '먼저 호출한 media Command가 먼저 dispatch되어야 한다')
+    assert.equal(typeof peekMediaCache('m-swp-seq'), 'string') // 참조 항목 유지
+    assert.equal(peekMediaCache('m-swp-stale'), null)          // 미참조 찌꺼기 축출
+
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: imagePage.id } }) // 정리
+    await execute({ type: 'REMOVE_PAGE', payload: { pageId: textPage.id } })
   })
 })

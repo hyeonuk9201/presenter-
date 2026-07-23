@@ -1,8 +1,9 @@
 /**
  * Presentation.test.js
  * 범위: 이 파일은 아직 Presentation.js 전체를 커버하지 않는다 — 지금은
- * Song 연동 함수(D-021: importSongAsSection/reimportSongIntoSection)만
- * 다룬다. movePage/moveSectionGroup 등 나머지 함수의 회귀 테스트는
+ * Song 연동 함수(D-021: importSongAsSection/reimportSongIntoSection)와
+ * collectReferencedMediaIds(D-0001: sweep keepSet 계산)만 다룬다.
+ * movePage/moveSectionGroup 등 나머지 함수의 회귀 테스트는
  * 별도 작업으로 남겨둔다.
  */
 import { describe, test } from 'node:test'
@@ -14,8 +15,9 @@ import {
   importSongAsSection,
   reimportSongIntoSection,
   getSectionGroups,
+  collectReferencedMediaIds,
 } from './Presentation.js'
-import { createTextPage } from './Page.js'
+import { createTextPage, createImagePage } from './Page.js'
 
 function makeSong({ id = 'song-1', title = '테스트곡', lyrics = [{ text: 'A' }, { text: 'B' }] } = {}) {
   return { id, title, lyrics }
@@ -147,5 +149,59 @@ describe('reimportSongIntoSection', () => {
     const next = reimportSongIntoSection(presentation, ghostSectionId, makeSong({ id: 'song-ghost', lyrics: [{ text: 'revived' }] }))
 
     assert.deepEqual(next.pages.map(p => p.text), ['a-1', 'revived'])
+  })
+})
+
+describe('collectReferencedMediaIds (D-0001)', () => {
+  function withPages(...pageList) {
+    let presentation = createPresentation({ title: 't' })
+    for (const page of pageList) presentation = addPage(presentation, page)
+    return presentation
+  }
+
+  test('빈 pages — 빈 Set을 반환한다', () => {
+    const ids = collectReferencedMediaIds(createPresentation({ title: 't' }))
+    assert.equal(ids.size, 0)
+  })
+
+  test('mediaId만 가진 Page — 그 id를 수집한다', () => {
+    const presentation = withPages(createImagePage({ mediaId: 'm-content', label: 'img' }))
+    assert.deepEqual([...collectReferencedMediaIds(presentation)], ['m-content'])
+  })
+
+  test('backgroundMediaId만 가진 text Page(D-032) — 배경 id도 수집한다', () => {
+    const presentation = withPages(
+      createTextPage({ text: 'bg', backgroundMediaId: 'm-bg', backgroundMediaType: 'image' })
+    )
+    assert.deepEqual([...collectReferencedMediaIds(presentation)], ['m-bg'])
+  })
+
+  test('mediaId와 backgroundMediaId를 둘 다 가진 Page — 둘 다 수집한다', () => {
+    // Domain 생성자는 두 필드를 동시에 만들지 않지만, 함수는 Page의 모양만
+    // 본다 — CommandBus.preloadMedia와 같은 전제(두 참조 병행 가능)를 검증
+    const both = { ...createImagePage({ mediaId: 'm-content-2', label: 'both' }), backgroundMediaId: 'm-bg-2' }
+    const ids = collectReferencedMediaIds(withPages(both))
+    assert.equal(ids.size, 2)
+    assert.ok(ids.has('m-content-2'))
+    assert.ok(ids.has('m-bg-2'))
+  })
+
+  test('미디어 참조가 없는 Page(null 필드)는 아무것도 더하지 않는다', () => {
+    const presentation = withPages(
+      createTextPage({ text: '텍스트 전용' }), // mediaId 없음, backgroundMediaId: null
+      createImagePage({ mediaId: 'm-only', label: 'img' })
+    )
+    assert.deepEqual([...collectReferencedMediaIds(presentation)], ['m-only'])
+  })
+
+  test('여러 Page가 같은 id를 공유해도 1회만 수집된다(Set)', () => {
+    const presentation = withPages(
+      createImagePage({ mediaId: 'm-shared', label: 'a' }),
+      createImagePage({ mediaId: 'm-shared', label: 'b' }),
+      createTextPage({ text: 'bg-share', backgroundMediaId: 'm-shared', backgroundMediaType: 'image' })
+    )
+    const ids = collectReferencedMediaIds(presentation)
+    assert.equal(ids.size, 1)
+    assert.ok(ids.has('m-shared'))
   })
 })

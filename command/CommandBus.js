@@ -44,7 +44,10 @@
  *     않았다.
  *   - 캐시 write는 오직 여기(preloadMedia 내부)에서만 일어난다. View/
  *     Store/History는 MediaRuntimeCache에 쓰기 권한이 없다 — media/
- *     MediaRuntimeCache.js 헤더 참조.
+ *     MediaRuntimeCache.js 헤더 참조. (D-0001, 2026-07-23 확장 — 개정
+ *     아님): fill은 preloadMedia, evict는 참조 기반 sweep(dispatch 직후) —
+ *     둘 다 CommandBus 내부다. keepSet 계산은 domain/Presentation.js의
+ *     collectReferencedMediaIds()에 위임한다.
  *   - History는 이 과정에 관여하지 않는다. afterExecute Hook은 여전히
  *     dispatch 이후에만 "관찰"하며, media를 다시 로드하거나 캐시를
  *     건드리지 않는다 — History는 deterministic replay여야 하기 때문에,
@@ -67,7 +70,8 @@
 
 import { dispatch, getState } from '../store/AppStore.js'
 import { get as getMedia } from '../media/MediaStore.js'
-import { fill as fillMediaCache, has as hasMediaCached } from '../media/MediaRuntimeCache.js'
+import { fill as fillMediaCache, has as hasMediaCached, sweep as sweepMediaCache } from '../media/MediaRuntimeCache.js'
+import { collectReferencedMediaIds } from '../domain/Presentation.js'
 
 /**
  * History 전용 Hook 슬롯 (단일 객체, 배열 아님).
@@ -217,6 +221,15 @@ async function executeInternal(command) {
 
   // (D-018) History Hook은 dispatch 이후에만 관찰한다 — 가로채지 않는다.
   historyHook?.afterExecute?.(action, prevState)
+
+  // (D-0001) 참조 기반 sweep — pages 배열 참조가 바뀐 명령만 대상.
+  // 가드는 액션 타입 whitelist가 아니라 참조 비교다: 불변 Domain이 pages를
+  // 새로 만드는 모든 명령을 빠짐없이 잡고, SELECT/GO_LIVE 같은 비-pages
+  // 고빈도 명령은 sweep을 완전히 생략한다. keepSet 계산은 domain 헬퍼에
+  // 위임해 CommandBus의 Domain 침투를 현행 수준으로 유지한다.
+  if (prevState.presentation.pages !== getState().presentation.pages) {
+    sweepMediaCache(collectReferencedMediaIds(getState().presentation))
+  }
 }
 
 /**

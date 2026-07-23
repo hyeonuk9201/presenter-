@@ -493,6 +493,30 @@ export function getPageById(presentation, pageId) {
   return presentation.pages.find(p => p.id === pageId) ?? null
 }
 
+/**
+ * 현재 Presentation이 참조 중인 모든 mediaId 집합을 계산한다 (D-0001).
+ *
+ * MediaRuntimeCache 참조 기반 sweep의 keepSet 계산용 — 모든 Page의
+ * mediaId(image/video 콘텐츠)와 backgroundMediaId(D-032, text Page 배경)를
+ * 모은다. 이 계산을 domain에 두는 이유: Page가 어떤 필드로 미디어를
+ * 참조하는지는 Domain 구조 지식이므로, CommandBus가 직접 알게 하지 않고
+ * 여기에 위임한다(CommandBus의 Domain 침투를 현행 수준으로 유지).
+ *
+ * 새 미디어 참조 필드가 Page에 추가되면 이 함수에도 반드시 추가해야
+ * 한다 — 빠뜨리면 그 필드가 참조하는 blob URL이 sweep에 오축출된다.
+ *
+ * @param {{ pages: object[] }} presentation
+ * @returns {Set<string>} 참조 중인 mediaId 집합 (null/undefined 제외)
+ */
+export function collectReferencedMediaIds(presentation) {
+  const ids = new Set()
+  for (const page of presentation.pages) {
+    if (page.mediaId) ids.add(page.mediaId)
+    if (page.backgroundMediaId) ids.add(page.backgroundMediaId)
+  }
+  return ids
+}
+
 export function getPageIndex(presentation, pageId) {
   return presentation.pages.findIndex(p => p.id === pageId)
 }

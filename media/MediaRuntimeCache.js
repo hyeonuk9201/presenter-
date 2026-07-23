@@ -7,9 +7,10 @@
  *   - 이 캐시는 절대 Page(영속 객체)에 들어가지 않는다. blob URL은
  *     새로고침/새탭에서 무효가 되는 휘발성 값이기 때문이다 (Page는
  *     mediaId만 보유 — domain/Page.js 참조).
- *   - write(채우기)는 오직 Command Handler 내부에서만 일어난다
- *     (CommandBus.js의 preloadMedia()). View/Store/History는 이 모듈에
- *     쓰기 권한이 없다 — 아래 "허용되지 않는 의존" 참조.
+ *   - write(채우기/비우기)는 오직 Command Handler 내부에서만 일어난다 —
+ *     fill은 CommandBus.js의 preloadMedia(), evict는 CommandBus.js의
+ *     참조 기반 sweep(D-0001, 2026-07-23 확장 — 개정 아님). View/Store/
+ *     History는 이 모듈에 쓰기 권한이 없다 — 아래 "허용되지 않는 의존" 참조.
  *   - read(조회)는 View(PageView.js, PreviewPanel.js 등)에서 동기로
  *     이루어진다. 이 모듈의 조회 함수(peek)는 절대 비동기가 아니다 —
  *     캐시에 없으면 그냥 null을 반환할 뿐, IndexedDB를 다시 읽지 않는다
@@ -108,14 +109,35 @@ export function size() {
 }
 
 // ─────────────────────────────────────────
-// 비우기 (현재 범위 밖 — 자리만 마련)
+// 비우기 (Command Handler 전용 — D-0001)
 // ─────────────────────────────────────────
 
 /**
+ * 참조 기반 sweep (D-0001, 2026-07-23) — 축출의 표준 경로.
+ *
+ * keepSet(현재 state가 참조 중인 mediaId 집합 — domain/Presentation.js의
+ * collectReferencedMediaIds()가 계산)에 없는 모든 항목을 revoke + 삭제한다.
+ * 호출 지점은 CommandBus.executeInternal()의 dispatch 이후 한 곳뿐이다 —
+ * state의 원소(Live/Preview가 그리는 Page 포함)가 참조하는 id는 항상
+ * keepSet에 있으므로, 표시 중인 blob URL이 축출되는 일은 구조적으로
+ * 불가능하다. IndexedDB 레코드는 지우지 않는다(런타임 캐시만) — 축출된
+ * id가 undo 등으로 state에 재도입되면 preloadMedia가 새 URL로 다시 채운다.
+ *
+ * @param {Set<string>} keepSet - 유지할 mediaId 집합
+ */
+export function sweep(keepSet) {
+  for (const [mediaId, url] of urlCache) {
+    if (keepSet.has(mediaId)) continue
+    URL.revokeObjectURL(url)
+    urlCache.delete(mediaId)
+  }
+}
+
+/**
  * 명시적으로 1개 mediaId의 blob URL을 해제한다.
- * GC(자동 정리)는 이번 단계 범위 밖이다(media/MediaStore.js 헤더 참조) —
- * 이 함수도 현재 어떤 코드도 자동으로 호출하지 않는다. 호출 시점/정책은
- * Phase 2(Element/AssetRegistry 도입) 검토 대상.
+ * 단건 축출 API — 자동 정리의 표준 경로는 sweep()이다(D-0001). 현재
+ * 어떤 코드도 이 함수를 자동으로 호출하지 않으며, 유지 이유는 향후
+ * 국소 축출이 필요한 경우를 위한 최소 API 보존이다.
  * @param {string} mediaId
  */
 export function evict(mediaId) {

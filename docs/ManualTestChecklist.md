@@ -10,7 +10,7 @@
 > 한 줄 남긴다. 오래돼서 더 이상 유효하지 않으면(이후 세션에서 그 위에
 > 기능이 문제없이 쌓여 사실상 검증된 경우 등) 이유와 함께 삭제한다.
 >
-> 최종 업데이트: 2026-07-18 (TD-2 전역 rejection 토스트 E2E 검증 완료)
+> 최종 업데이트: 2026-07-23 (D-0001 MediaRuntimeCache 참조 기반 sweep E2E 검증 완료)
 
 ---
 
@@ -26,6 +26,16 @@
 
 ## 확인 완료
 
+- [x] **MediaRuntimeCache 참조 기반 sweep (D-0001)** — 2026-07-23
+  Playwright(Chromium) 자동화로 검증, 체크 17건 전부 통과 + JS 에러 0건.
+  이미지 Page 2개(서로 다른 PNG) 생성 → 첫째 삭제 시 sweep으로 캐시
+  size 2→1 감소 + 둘째 이미지는 유효 blob URL로 계속 렌더(naturalWidth>0,
+  깨진 이미지 없음) → Ctrl+Z undo 시 INSERT_PAGE_AT 재preload로 캐시
+  복원(size 2) + 첫째 이미지 정상 재렌더 → text Page에 배경 전용 미디어
+  적용(D-032, media-layer+text-layer 동시 렌더, size 3) → 배경 제거 시
+  backgroundMediaId 미참조 축출(size 2, 텍스트 레이어 유지). 캐시 size는
+  addScriptTag 모듈 브릿지로 동일 인스턴스 확인. e2e-verify 스킬 템플릿
+  사용, 스크립트 검증 후 삭제.
 - [x] **전역 미처리 rejection 토스트 (감사 TD-2, 9-55)** — 2026-07-18
   Playwright(Chromium) 자동화로 검증, 체크 2건 통과. 앱 부팅 + 평상
   플로우 JS 에러 0건(의도적 트리거 이전 구간만 검사), `page.evaluate`로
