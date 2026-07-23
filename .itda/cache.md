@@ -7,7 +7,7 @@
 > 정본 fetch). 취사 선택: `pins.md`(pin) > 정본 `캐시` 필드 > 최근
 > 5건 규칙. 재생성: `python3 /home/hyeonuk/projects/ITDA/c1/scripts/cache.py build --itda /home/hyeonuk/projects/presenter-/.itda`
 > (approve.py apply가 자동 수행 · 정본 수동 append 후엔 직접 실행).
-> 생성: 2026-07-23 · 결정 2건 중 핫 2건
+> 생성: 2026-07-24 · 결정 2건 중 핫 2건
 
 ## 결정 인덱스 (전체)
 
@@ -82,3 +82,10 @@
     label, 이후 줄=text). 빈 줄이 있으면 기존 규칙(빈 줄 분리+첫 줄
     라벨) 그대로 — 하위 호환·왕복 유지 / 근거: 사용자 선택("가사 추가 +
     곡 편집 둘 다")
+
+
+## 현재 상태 (최신 timeline: 2026-07-24 · 세션 0c3f9891-745b-43ea-8f7d-926c2f135cad — C1 추출 → C5 승인)
+
+- **미결** (open): 다음 로드맵 택일 제안(①실사용 라운드 ②main/bus 라우팅 Research 착수 ③성경/찬송가 데이터 소스 조사) — 사용자가 택일하지 않고 가사 마커 불편 보고로 전환되어 결론 없음 · 영어 절 표기(Verse/Chorus) 감지 — 이번에 채택 안 함, 영어 가사에서 같은 불편이 생기면 그때 D-0002에 패턴 추가하는 것으로 보류
+- **다음작업** (next): 없음
+- **결정** (decisions): 없음
