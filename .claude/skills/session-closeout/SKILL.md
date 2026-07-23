@@ -37,9 +37,12 @@ unknown changes into your commit (6cf1730 is the counterexample).
 1. `docs/TODO.md` — check off the completed item, compress it to the
    post-hoc one-line format, link the CurrentState session number,
    update the header's "최종 업데이트" line.
-2. `docs/CurrentState.md` — append a new `## 9-NN.` section (next
-   number after the last one) with: 배경 / 구현(또는 확인 내용) /
-   변경 파일 / 검증 / 다음 단계 진입 시 주의사항.
+2. ~~`docs/CurrentState.md` — append~~ **RETIRED (2026-07-23, ITDA
+   전환)**: CurrentState.md is a frozen archive — do NOT append.
+   Session records are captured automatically by the ITDA SessionEnd
+   hook; decisions worth keeping go through the ITDA cycle
+   (extract → human approval → `.itda/`). See CLAUDE.md
+   "프로젝트 기억" for the rollback condition.
 3. `docs/ManualTestChecklist.md` — only if UI was changed: one result
    line.
 

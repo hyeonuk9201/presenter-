@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/hyeonuk/projects/ITDA/c1/scripts/session_end_copy.py",
+            "timeout": 30,
+            "statusMessage": "transcript를 ITDA c1/data/raw/presenter-/로 복사 중"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -2,15 +2,15 @@
 
 ## 세션 시작 순서 (필수)
 1. docs/TODO.md — 우선순위 로드맵 확인. P0/P1부터, ⚠ 항목은 착수 금지(아래 에스컬레이션 참조).
-2. docs/CurrentState.md — 맨 아래(번호 큰 세션)부터 읽는다. "다음 단계 진입 시 주의사항" 절은 반드시 읽는다.
-3. 착수 전 docs/Decisions.md에서 관련 D-NNN을 검색한다(D-029 강제 규칙). 관련 결정이 있으면 그 경계 안에서만 작업하고, 충돌하면 구현하지 말고 에스컬레이션한다.
+2. docs/CurrentState.md — **동결 아카이브(2026-07-23, ITDA 전환)**. 최신 세션 상태는 자동 로드되는 `.itda/cache.md`(하단 "프로젝트 기억" 절)가 담당한다. 동결 이전 맥락이 필요하면 맨 아래(번호 큰 세션)부터 읽는다 — 기존 "다음 단계 진입 시 주의사항" 절들은 여전히 유효.
+3. 착수 전 docs/Decisions.md에서 관련 D-NNN을 검색한다(D-029 강제 규칙 — 동결 아카이브지만 기재된 결정은 계속 유효). 전환(2026-07-23) 이후 신규 결정은 `.itda/decisions.md`(D-NNNN)에 있다 — 양쪽 다 검색한다. 관련 결정이 있으면 그 경계 안에서만 작업하고, 충돌하면 구현하지 말고 에스컬레이션한다.
 4. 건드리는 레이어의 docs/*Architecture.md를 읽는다. 주의: Architecture 문서 상당수는 Phase 2 목표 구조(Element 모델, Session 등)를 서술한다 — 현재 코드와 다르면 docs/CurrentState.md가 최종 근거다(DocumentationHierarchy.md Tier 1 주의).
 
 ## 세션 마감 순서 (필수)
 코드 커밋에 아래 문서 갱신이 동반되지 않으면 그 작업은 **미완료**다. (근거: 커밋 6cf1730과 TD-5 두 번 모두 코드만 남고 기록이 누락돼 다음 세션이 완료된 일을 다시 파악하는 비용을 치렀다 — CurrentState.md 9-46/9-48 참조)
 1. `node --test` 전체 통과 확인(fail 0). UI 변경이 있었으면 Playwright E2E까지(아래 검증 절).
 2. docs/TODO.md — 완료 항목 체크·한 줄 압축, 헤더 "최종 업데이트" 갱신.
-3. docs/CurrentState.md — 세션 번호(9-NN) 절 append.
+3. ~~docs/CurrentState.md — 세션 번호(9-NN) 절 append.~~ → **ITDA로 전환(2026-07-23)**: 세션 기록은 SessionEnd 훅이 transcript를 자동 수집하고, 남길 결정이 있는 세션은 ITDA 전주기(추출→사람 승인→`.itda/` 유입)로 기록한다. CurrentState.md에는 더 이상 append하지 않는다.
 4. UI 변경이 있었으면 docs/ManualTestChecklist.md에 결과 한 줄 기록.
 5. 코드와 위 문서 갱신을 같은 커밋(최소한 같은 푸시)에 포함한다.
 
@@ -37,7 +37,7 @@
 - Presentation/PresenterState 상태 변경만 CommandBus.execute() 경유. 직접 dispatch() 호출 금지.
 - SongStore/AppSettingsStore/MediaStore는 CommandBus/HistoryManager를 거치지 않는다(D-027). 이 저장소들에 Undo를 붙이라는 요구가 나오면 구현하지 말고 에스컬레이션한다(D-027 충돌).
 - 도메인 파일(domain/*)은 DOM/Store/렌더링을 알지 못한다.
-- 새 설계 결정은 docs/Decisions.md에 D-NNN으로 기록한 뒤 구현한다.
+- 새 설계 결정은 사람 승인을 거쳐 `.itda/decisions.md`에 D-NNNN으로 기록한다(ITDA 전환 2026-07-23 — docs/Decisions.md는 동결 아카이브, 기재된 D-NNN 결정은 계속 유효).
 
 ## 코드 구조 (큰 그림)
 두 개의 브라우저 창이 `BroadcastChannel('tc-presenter-output')`으로 연결된 구조다.
@@ -64,7 +64,7 @@ UI(index.html, ui/CueList.js, ui/PreviewPanel.js)
 - `store/SongStore.js`·`AppSettingsStore.js`·`media/MediaStore.js` — **별도 저장소(D-027).** CommandBus/History/AppStore 흐름 밖. localStorage/IndexedDB에 직접 저장하고 Undo 대상 아님.
 - `ui/*`, `view/*`, `output/*` — 렌더링/입출력.
 
-주의: `docs/*Architecture.md`와 `Vocabulary.md`는 다수가 Phase 2 목표(Element 모델, elementMap SSOT)를 서술한다. 현재 코드는 Page가 text/style를 직접 보유하는 이전 단계다 — 코드와 다르면 CurrentState.md가 최종 근거(D-029, DocumentationHierarchy.md).
+주의: `docs/*Architecture.md`와 `Vocabulary.md`는 다수가 Phase 2 목표(Element 모델, elementMap SSOT)를 서술한다. 현재 코드는 Page가 text/style를 직접 보유하는 이전 단계다 — 코드와 다르면 CurrentState.md(동결 시점까지) + `.itda/timeline.md`(전환 이후)가 최종 근거(D-029, DocumentationHierarchy.md).
 
 ## 검증 (D-028)
 - domain/store/persistence/command/history 변경 시: 같은 폴더에 *.test.js를 추가/갱신하고 `node --test` 전체 통과(fail 0)를 확인한다. 테스트 개수는 세션마다 늘어나므로 특정 숫자를 기준으로 삼지 않는다. 테스트 없는 기능/버그 수정은 미완료다.
@@ -84,10 +84,29 @@ UI(index.html, ui/CueList.js, ui/PreviewPanel.js)
 - 새 Decision이 필요해 보이는 설계 판단
 - 기존 D-NNN과 충돌하는 요구(TODO.md의 ⚠ 항목: 스타일 프리셋 다중 적용=D-024, Song Undo=D-027)
 - 문서 구조 변경(파일 분리/통합/Tier 변경)
-단, 완료 처리에 필요한 루틴 기록(TODO 체크, 세션 기록, ManualTestChecklist 갱신)은 계속한다.
+단, 완료 처리에 필요한 루틴 기록(TODO 체크, ManualTestChecklist 갱신)은 계속한다. (세션 기록은 ITDA 캡처가 자동 수행 — 2026-07-23 전환.)
 
 ## Skills
 - domain/, store/, persistence/, command/, history/ 아래 파일을 수정하거나 새 모듈 파일을 만들기 전: .claude/skills/architecture-review 적용.
 - 기존 코드 수정: .claude/skills/fnr-patch — 파일 전체 재작성 금지, Edit 도구로 해당 부분만 최소 패치.
 - ui/*.js, index.html/output.html 변경을 커밋하기 전: .claude/skills/e2e-verify — 동작 검증된 Playwright 템플릿을 그대로 사용한다.
 - 작업 완료 후 커밋 직전: .claude/skills/session-closeout — 위 "세션 마감 순서"의 실행 절차(명령 포함).
+
+## 프로젝트 기억 (`.itda/`) — ITDA 전환 (2026-07-23)
+
+이 저장소의 기록 체계는 수동(CurrentState.md 세션 절 + Decisions.md
+ADR)에서 **ITDA로 즉시 전환**됐다(테스트 성격 — 사용자 확정). 도구는
+ITDA 레포(`~/projects/ITDA`)에 중앙 설치돼 있고, 여기엔 데이터만 있다.
+
+- **신규 기록의 정본은 `.itda/`** — 세션 종료 시 transcript가 ITDA 레포
+  `c1/data/raw/presenter-/`로 자동 수집되고(SessionEnd 훅), 남길 결정이
+  있는 세션은 ITDA 전주기(추출→사람 승인→유입)로 `.itda/`에 기록한다.
+- **기존 문서는 동결 아카이브** — `docs/CurrentState.md`·`docs/Decisions.md`
+  (D-NNN, 3자리)는 더 이상 append하지 않지만 기재된 결정·주의사항은 계속
+  유효하다. `.itda/`의 `D-NNNN`(4자리)과 별개 번호 체계.
+- 자동 로드는 아래 컨텍스트 캐시뿐 — 인덱스에만 있는 결정의 상세는
+  `.itda/decisions.md`에서 그 D-번호를 찾아 읽는다.
+- **롤백 조건**: 기록 공백·품질 저하가 확인되면 마감 순서 3(CurrentState
+  append)을 되살리는 것으로 되돌린다.
+
+@.itda/cache.md
