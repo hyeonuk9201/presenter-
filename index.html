@@ -1061,7 +1061,7 @@
   import { PersistenceSubscriber, onPersistenceStateChange } from './persistence/PersistenceSubscriber.js'
   import { buildExportPayload, buildExportFileName, validateImportPayload, applyImportToStorage } from './persistence/ExportImport.js'
   import { HistoryHook, undo, redo, canUndo, canRedo } from './history/HistoryManager.js'
-  import { importLyrics } from './utils/lyricsImport.js'
+  import { importLyrics, isSectionMarker } from './utils/lyricsImport.js'
   import { generateId } from './utils/id.js'
   import { put as putMedia, list as listMedia, remove as removeMedia, get as getMedia } from './media/MediaStore.js'
   import { createCueList } from './ui/CueList.js'
@@ -1469,7 +1469,41 @@
   // Page를 만들고 이건 LyricBlock을 만드는 서로 다른 목적이라 파일을
   // 공유하지 않는다(Song이 Page/Presentation을 모른다는 D-026 원칙과
   // 같은 이유로, 이 파싱 로직은 Song 쪽에 독립적으로 둔다).
+  // 단, isSectionMarker는 예외 — Page/Song 어느 쪽도 모르는 순수한
+  // "이 줄이 절 표시인가" 판정이라 공유해도 D-026 위반이 아니고,
+  // 두 경로의 마커 정의가 어긋나는 혼란을 막으려면 오히려 공유해야 한다.
+  //
+  // 확장(2026-07-23, 절 표시 마커): 빈 줄이 전혀 없고 마커 줄("1절"/
+  // "후렴" 등)이 있으면 마커를 경계로 분리한다 — 마커 줄이 새 블록의
+  // label, 이후 줄들이 text가 된다. 빈 줄이 하나라도 있으면 기존
+  // 동작(빈 줄 분절 + 첫 줄 라벨)을 그대로 유지한다(하위 호환·왕복 유지).
   function splitLyricsToBlocks(rawText) {
+    const hasBlankLine = /\n\s*\n/.test(rawText)
+    const lines = rawText.split('\n')
+    if (!hasBlankLine && lines.some(isSectionMarker)) {
+      // 마커 기반 분리: 마커 줄 = 새 블록의 label. 첫 마커 이전에
+      // 내용이 있으면 label '' 블록으로 살린다(가사 유실 방지).
+      const blocks = []
+      let label = ''
+      let textLines = []
+      const flush = () => {
+        const text = textLines.map(l => l.trim()).filter(Boolean).join('\n')
+        if (label || text) blocks.push(createLyricBlock({ label, text }))
+      }
+      for (const line of lines) {
+        if (isSectionMarker(line)) {
+          flush()
+          label = line.trim()
+          textLines = []
+        } else {
+          textLines.push(line)
+        }
+      }
+      flush()
+      return blocks
+    }
+
+    // 기존 동작: 빈 줄로 덩어리를 나누고 각 덩어리의 첫 줄을 라벨로.
     return rawText
       .split(/\n\s*\n/)
       .map(s => s.trim())
