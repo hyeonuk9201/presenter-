@@ -7,12 +7,13 @@
 > 정본 fetch). 취사 선택: `pins.md`(pin) > 정본 `캐시` 필드 > 최근
 > 5건 규칙. 재생성: `python3 /home/hyeonuk/projects/ITDA/c1/scripts/cache.py build --itda /home/hyeonuk/projects/presenter-/.itda`
 > (approve.py apply가 자동 수행 · 정본 수동 append 후엔 직접 실행).
-> 생성: 2026-07-24 · 결정 2건 중 핫 2건
+> 생성: 2026-07-24 · 결정 3건 중 핫 3건
 
 ## 결정 인덱스 (전체)
 
 - D-0001 · MediaRuntimeCache 축출은 참조 기반 sweep으로, CommandBus 안에서 dispatch 직후 수행한다
 - D-0002 · 가사 절 표시 마커는 한국어 기본형만 감지, 경계로만 쓰고 송출에서 제거한다
+- D-0003 · output.html 송출 창 자체 캐시 축출은 DOM 참조 기반 sweep으로 한다
 
 ## 핫 결정 (전문 — 정본 그대로)
 
@@ -83,9 +84,47 @@
     라벨) 그대로 — 하위 호환·왕복 유지 / 근거: 사용자 선택("가사 추가 +
     곡 편집 둘 다")
 
+## D-0003 · output.html 송출 창 자체 캐시 축출은 DOM 참조 기반 sweep으로 한다
+- **이유** (rationale): output.html은 편집 창과 별도 JS realm이라 자기만의
+  MediaRuntimeCache를 갖는데, `resolveMedia()`가 `fill`(blob URL 생성)만
+  하고 revoke를 전혀 안 해, 프로젝터에 표시된 모든 mediaId의 blob URL이
+  세션 종료까지 영구 누적됐다(D-0001이 편집 창만 막고 이 realm은
+  "별도 realm·크로스페이드 revoke 위험"으로 후속 Decision에 미뤄둔 자리).
+  D-0001의 "state가 참조하지 않는 id만 축출" 철학을 이 realm에도 적용하되,
+  keepSet의 출처가 다르다 — output.html은 전체 프레젠테이션을 모르고 개별
+  SHOW_PAGE만 받으므로 "지금 container DOM에 실제로 붙어 있는 슬라이드들이
+  참조하는 mediaId"를 유일한 진실로 삼는다. 크로스페이드로 두 슬라이드가
+  겹친 순간에도 둘 다 DOM에 있어 함께 keepSet에 들어가므로, 진행 중인
+  전환의 미디어가 revoke되는 사고가 구조적으로 불가능하다. 대안 B(Broadcast
+  프로토콜에 전체 참조 집합을 실어 Presenter와 동일 sweep — BroadcastOutput.js
+  + output.html 양쪽 수정·메시지 스키마 변경으로 surface 큼), C(LRU 상한 —
+  참조 무관 근사, D-0001이 Presenter 쪽에서 과설계로 기각한 방식)는 기각.
+- **근거** (evidence):
+  - `doc:.itda/decisions.md#d-0003` 상위 D-0001 §Non-goal "output.html 자체
+    캐시 축출(별도 realm·크로스페이드 revoke 위험 — 별도 후속 Decision)"
+  - `doc:output.html` `resolveMedia()`가 `fillMediaCache`만 호출, sweep/evict
+    호출부 0곳(누수 확정)
+- **시각** (time): 2026-07-24
+- **상태** (status): accepted
+- **출처** (source): 세션 2026-07-24 (사용자가 3개 설계 선택지 중 "DOM 참조
+  기반 sweep"을 직접 확정)
+- **하위** (sub):
+  - keepSet 계산은 `sweepOutputCache()` — `container.querySelectorAll('.slide')`
+    를 순회해 각 슬라이드의 `dataset.mediaId`·`dataset.bgMediaId`를 모은다.
+    슬라이드 DOM에 mediaId를 심는 것은 output.html의 renderPage에서만 하고
+    `view/PageView.js`는 건드리지 않는다(preview 창과 공유되는 순수 뷰라
+    realm 국소성 유지) / 근거: 사용자 선택("DOM 참조 기반 sweep")
+  - sweep 호출 지점 3곳 — renderPage 끝(cut이면 이전 슬라이드가 이미 DOM에서
+    빠져 즉시 revoke, fade면 previousSlide가 남아 keep됨), crossfade cleanup
+    setTimeout(previousSlide 제거 후 다시 sweep해 이전 미디어 revoke),
+    showStandby(keepSet 빈 집합 → 전체 revoke) / 근거: `doc:output.html`
+  - Non-goal(유지): IndexedDB 영속 GC(D-002 재개 선행), LRU/상한 — D-0001의
+    Non-goal 중 IndexedDB·LRU는 그대로 남는다(이번은 output.html 런타임 캐시
+    누수만 해소) / 근거: 상위 D-0001 §Non-goal
 
-## 현재 상태 (최신 timeline: 2026-07-24 · 세션 0c3f9891-745b-43ea-8f7d-926c2f135cad — C1 추출 → C5 승인)
 
-- **미결** (open): 다음 로드맵 택일 제안(①실사용 라운드 ②main/bus 라우팅 Research 착수 ③성경/찬송가 데이터 소스 조사) — 사용자가 택일하지 않고 가사 마커 불편 보고로 전환되어 결론 없음 · 영어 절 표기(Verse/Chorus) 감지 — 이번에 채택 안 함, 영어 가사에서 같은 불편이 생기면 그때 D-0002에 패턴 추가하는 것으로 보류
-- **다음작업** (next): 없음
+## 현재 상태 (최신 timeline: 2026-07-24 · 세션 1ba3bb09-7fdc-475a-a030-ce0b981e580f — C1 추출 → C5 승인)
+
+- **미결** (open): main/bus 출력 identity·라우팅 모델(Research 초안)은 **"미채택 (사람 승인 대기)"** 상태 — 채택 여부는 사용자 결정 사항 (근거: L0260 "Status \"Research — 미채택 (사람 승인 대기)\" 명시", L0364 "채택하시려면 말씀 주세요") · 채택 전 사용자가 정해야 할 쟁점 5건 (L0356-L0362): · 1. 상태 모델 최종 승인 — `livePageId` → 맵 전환(S-A) 회귀 위험 감수 여부 · 2. feed 슬롯 방식 — 자유 정의 vs 고정 슬롯(bus1~4) · 3. bus 송출 UI 제스처 (Phase 2 시 확정 가능) · 4. Overlay feed별 라우팅의 Phase 2 승격 여부 · 5. Phase 1 착수 시점
+- **다음작업** (next): [ ] main/bus Research 초안 채택 여부 사용자 결정 대기 — 채택 시 ITDA 전주기(승인 → `.itda/decisions.md` D-0NNN 등재)로 진행 (근거: L0364) · [ ] 쟁점 1·2 확정 시 Phase 1(구조만) 착수 가능 (근거: L0364 "쟁점 1·2만 정해지면 Phase 1 착수가 가능한 상태입니다")
 - **결정** (decisions): 없음

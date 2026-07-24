@@ -10,7 +10,7 @@
 > 한 줄 남긴다. 오래돼서 더 이상 유효하지 않으면(이후 세션에서 그 위에
 > 기능이 문제없이 쌓여 사실상 검증된 경우 등) 이유와 함께 삭제한다.
 >
-> 최종 업데이트: 2026-07-23 (D-0001 MediaRuntimeCache 참조 기반 sweep E2E 검증 완료)
+> 최종 업데이트: 2026-07-24 (D-0003 output.html 송출 창 캐시 sweep E2E 3건 검증 완료)
 
 ---
 
@@ -33,6 +33,14 @@
   SongStore blocks가 label(1절/후렴)/text로 분리, 재편집 시 textarea가
   빈 줄 왕복 형식으로 복원. (3) 하위 호환: 빈 줄 구분 기존 형식은 곡
   편집기·가사 추가 양쪽 모두 이전 동작 그대로.
+
+- [x] **output.html 송출 창 캐시 참조 기반 sweep (D-0003)** — 2026-07-24
+  Playwright(Chromium) 자동화로 검증, 3건 전부 통과 + JS 에러 0건.
+  output.html에 blob 2개(e2e-A/B) IndexedDB 심고 BroadcastChannel로
+  SHOW_PAGE 전송 → (1) A 표시(cut) 후 A 캐시됨 → (2) B로 cut 전환 시
+  sweep이 미참조 A를 revoke(has(A)=false)·현재 B 유지(has(B)=true)·
+  revokeObjectURL 호출 확인 → (3) CLEAR(STANDBY) 시 keepSet 빈 집합으로
+  B도 축출(캐시 비움). e2e-verify 스킬 템플릿 사용, 스크립트 검증 후 삭제.
 
 - [x] **MediaRuntimeCache 참조 기반 sweep (D-0001)** — 2026-07-23
   Playwright(Chromium) 자동화로 검증, 체크 17건 전부 통과 + JS 에러 0건.

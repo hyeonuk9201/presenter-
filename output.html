@@ -82,7 +82,7 @@
 <script type="module">
   import { createPageView } from './view/PageView.js'
   import { get as getMedia } from './media/MediaStore.js'
-  import { fill as fillMediaCache, has as hasMediaCached, peek as peekMediaCache } from './media/MediaRuntimeCache.js'
+  import { fill as fillMediaCache, has as hasMediaCached, peek as peekMediaCache, sweep as sweepMediaCache } from './media/MediaRuntimeCache.js'
 
   const CHANNEL_NAME = 'tc-presenter-output'
   const container = document.getElementById('output-container')
@@ -183,6 +183,13 @@
     // resolve가 끝난 뒤에만 화면을 교체한다 — 그 전까지는 직전 화면 유지.
     const newSlide = createPageView(page, media, backgroundMedia)
 
+    // (D-0003) 캐시 축출용 참조 마킹 — 이 슬라이드가 잡고 있는 mediaId를
+    // DOM에 심어 둔다. sweepOutputCache()가 container에 실제로 붙어 있는
+    // 슬라이드들의 이 값만 keepSet으로 모으므로, 크로스페이드로 두 슬라이드가
+    // 겹쳐 있는 순간에도 양쪽 미디어가 모두 유지된다(revoke 위험 없음).
+    if (page.mediaId) newSlide.dataset.mediaId = page.mediaId
+    if (page.backgroundMediaId) newSlide.dataset.bgMediaId = page.backgroundMediaId
+
     // type이 'fade'이고 페이드해 들어올 대상(직전 슬라이드)이 실제로
     // 있을 때만 크로스페이드한다. 'none'/'cut'/미인식 값이거나 STANDBY
     // 직후 첫 Page라면(currentSlideEl이 없음) 기존과 동일한 즉시 교체
@@ -197,6 +204,12 @@
     }
 
     currentSlideEl = newSlide
+
+    // (D-0003) cut 교체면 이전 슬라이드가 이미 DOM에서 사라졌으니 그 미디어를
+    // 즉시 revoke한다. 크로스페이드면 previousSlide가 아직 container에 남아
+    // 있어 keepSet에 포함되므로 이 시점엔 아무것도 revoke되지 않는다 — 실제
+    // 정리는 crossfadeToSlide의 cleanup에서 previousSlide 제거 후 다시 돈다.
+    sweepOutputCache()
   }
 
   /**
@@ -229,7 +242,32 @@
       if (previousSlide.parentNode === container && previousSlide !== currentSlideEl) {
         container.removeChild(previousSlide)
       }
+      // (D-0003) previousSlide가 화면에서 빠진 뒤에야 그 미디어를 revoke할 수
+      // 있다. keepSet은 이 시점 container의 실제 DOM에서 계산하므로, 연속
+      // 전환으로 또 다른 슬라이드가 들어와 있어도 최신 상태를 반영해 안전하다.
+      sweepOutputCache()
     }, duration)
+  }
+
+  /**
+   * (D-0003) 송출 창 자체 캐시 축출 — 참조 기반 sweep.
+   *
+   * output.html은 별도 realm이라 자기만의 MediaRuntimeCache를 갖는데, 지금까지
+   * fill만 하고 revoke를 안 해 표시된 모든 mediaId의 blob URL이 영구 누적됐다.
+   * 편집 창(CommandBus)의 D-0001 sweep과 같은 "state가 참조하지 않는 id만
+   * 축출" 철학을 이 realm에 적용하되, keepSet의 출처가 다르다 — output.html은
+   * 전체 프레젠테이션을 모르고 개별 SHOW_PAGE만 받으므로, "지금 container에
+   * 실제로 붙어 있는 슬라이드들이 참조하는 mediaId"를 유일한 진실로 삼는다.
+   * 크로스페이드로 두 슬라이드가 겹친 순간에도 둘 다 DOM에 있어 keepSet에
+   * 함께 들어가므로, 진행 중인 전환의 미디어가 revoke되는 사고가 없다.
+   */
+  function sweepOutputCache() {
+    const keep = new Set()
+    container.querySelectorAll('.slide').forEach(el => {
+      if (el.dataset.mediaId) keep.add(el.dataset.mediaId)
+      if (el.dataset.bgMediaId) keep.add(el.dataset.bgMediaId)
+    })
+    sweepMediaCache(keep)
   }
 
   /**
@@ -255,6 +293,8 @@
     container.innerHTML = ''
     container.appendChild(standby)
     currentSlideEl = null // STANDBY로 돌아가면 "이전 슬라이드"가 없어진다 — 다음 Page는 항상 즉시 교체(cut)로 시작
+    // (D-0003) STANDBY엔 슬라이드가 없으니 keepSet은 빈 집합 — 캐시 전체 revoke.
+    sweepOutputCache()
   }
 
   // ── Emergency Overlay (D-031) ─────────────

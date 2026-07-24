@@ -83,4 +83,42 @@
     라벨) 그대로 — 하위 호환·왕복 유지 / 근거: 사용자 선택("가사 추가 +
     곡 편집 둘 다")
 
+## D-0003 · output.html 송출 창 자체 캐시 축출은 DOM 참조 기반 sweep으로 한다
+- **이유** (rationale): output.html은 편집 창과 별도 JS realm이라 자기만의
+  MediaRuntimeCache를 갖는데, `resolveMedia()`가 `fill`(blob URL 생성)만
+  하고 revoke를 전혀 안 해, 프로젝터에 표시된 모든 mediaId의 blob URL이
+  세션 종료까지 영구 누적됐다(D-0001이 편집 창만 막고 이 realm은
+  "별도 realm·크로스페이드 revoke 위험"으로 후속 Decision에 미뤄둔 자리).
+  D-0001의 "state가 참조하지 않는 id만 축출" 철학을 이 realm에도 적용하되,
+  keepSet의 출처가 다르다 — output.html은 전체 프레젠테이션을 모르고 개별
+  SHOW_PAGE만 받으므로 "지금 container DOM에 실제로 붙어 있는 슬라이드들이
+  참조하는 mediaId"를 유일한 진실로 삼는다. 크로스페이드로 두 슬라이드가
+  겹친 순간에도 둘 다 DOM에 있어 함께 keepSet에 들어가므로, 진행 중인
+  전환의 미디어가 revoke되는 사고가 구조적으로 불가능하다. 대안 B(Broadcast
+  프로토콜에 전체 참조 집합을 실어 Presenter와 동일 sweep — BroadcastOutput.js
+  + output.html 양쪽 수정·메시지 스키마 변경으로 surface 큼), C(LRU 상한 —
+  참조 무관 근사, D-0001이 Presenter 쪽에서 과설계로 기각한 방식)는 기각.
+- **근거** (evidence):
+  - `doc:.itda/decisions.md#d-0003` 상위 D-0001 §Non-goal "output.html 자체
+    캐시 축출(별도 realm·크로스페이드 revoke 위험 — 별도 후속 Decision)"
+  - `doc:output.html` `resolveMedia()`가 `fillMediaCache`만 호출, sweep/evict
+    호출부 0곳(누수 확정)
+- **시각** (time): 2026-07-24
+- **상태** (status): accepted
+- **출처** (source): 세션 2026-07-24 (사용자가 3개 설계 선택지 중 "DOM 참조
+  기반 sweep"을 직접 확정)
+- **하위** (sub):
+  - keepSet 계산은 `sweepOutputCache()` — `container.querySelectorAll('.slide')`
+    를 순회해 각 슬라이드의 `dataset.mediaId`·`dataset.bgMediaId`를 모은다.
+    슬라이드 DOM에 mediaId를 심는 것은 output.html의 renderPage에서만 하고
+    `view/PageView.js`는 건드리지 않는다(preview 창과 공유되는 순수 뷰라
+    realm 국소성 유지) / 근거: 사용자 선택("DOM 참조 기반 sweep")
+  - sweep 호출 지점 3곳 — renderPage 끝(cut이면 이전 슬라이드가 이미 DOM에서
+    빠져 즉시 revoke, fade면 previousSlide가 남아 keep됨), crossfade cleanup
+    setTimeout(previousSlide 제거 후 다시 sweep해 이전 미디어 revoke),
+    showStandby(keepSet 빈 집합 → 전체 revoke) / 근거: `doc:output.html`
+  - Non-goal(유지): IndexedDB 영속 GC(D-002 재개 선행), LRU/상한 — D-0001의
+    Non-goal 중 IndexedDB·LRU는 그대로 남는다(이번은 output.html 런타임 캐시
+    누수만 해소) / 근거: 상위 D-0001 §Non-goal
+
 
